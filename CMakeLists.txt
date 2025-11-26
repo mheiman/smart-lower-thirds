@@ -90,6 +90,14 @@ endif()
 
 add_library(minizip STATIC ${MINIZIP_SOURCES})
 
+if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+  target_compile_options(minizip PRIVATE
+    -Wno-comma
+    -Wno-parentheses-equality
+    -Wno-unused-parameter
+  )
+endif()
+
 target_include_directories(minizip PUBLIC
   ${MINIZIP_DIR}
 )
