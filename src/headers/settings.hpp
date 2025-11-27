@@ -47,6 +47,8 @@ private slots:
 	void onOpenHtmlEditorDialog();
 	void onOpenCssEditorDialog();
 
+	void onLtPosChanged(int index);
+
 private:
 	void loadFromState();
 	void saveToState();
@@ -67,6 +69,9 @@ private:
 
 	QFontComboBox *fontCombo = nullptr;
 	QKeySequenceEdit *hotkeyEdit = nullptr;
+	QPushButton *clearHotkeyBtn = nullptr;
+
+	QComboBox *ltPosCombo = nullptr;
 
 	QComboBox *sceneCombo = nullptr;
 

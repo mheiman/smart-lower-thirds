@@ -13,6 +13,7 @@ struct LowerThirdConfig {
 	std::string anim_out;
 	std::string custom_anim_in;
 	std::string custom_anim_out;
+	std::string lt_position;
 
 	std::string font_family;
 	std::string bg_color;

@@ -201,8 +201,9 @@ std::string add_default_lower_third()
 	cfg.hotkey.clear();
 	cfg.visible = false;
 	cfg.profile_picture.clear();
+	cfg.lt_position = "lt-pos-bottom-left";
 
-	cfg.html_template = "<li id=\"{{ID}}\" class=\"lower-third animate__animated\">\n"
+	cfg.html_template = "<li id=\"{{ID}}\" class=\"lower-third {{LT_POSITION}} animate__animated\">\n"
 			    "  <div class=\"lt-inner\">\n"
 			    "    <div class=\"lt-title\">{{TITLE}}</div>\n"
 			    "    <div class=\"lt-subtitle\">{{SUBTITLE}}</div>\n"
@@ -263,8 +264,21 @@ LowerThirdConfig *get_by_id(const std::string &id)
 	return nullptr;
 }
 
-void toggle_active(const std::string &id)
+void toggle_active(const std::string &id, bool hideOthers)
 {
+	if (g_items.empty())
+		return;
+
+	if (!hideOthers) {
+		for (auto &it : g_items) {
+			if (it.id == id) {
+				it.visible = !it.visible;
+				break;
+			}
+		}
+		return;
+	}
+
 	bool thisVisible = false;
 	bool thisIsOnlyVisible = true;
 
@@ -277,16 +291,12 @@ void toggle_active(const std::string &id)
 		}
 	}
 
-	if (g_items.empty())
-		return;
-
 	if (thisVisible && thisIsOnlyVisible) {
 		for (auto &it : g_items)
 			it.visible = false;
 	} else {
-		for (auto &it : g_items) {
+		for (auto &it : g_items)
 			it.visible = (it.id == id);
-		}
 	}
 }
 
@@ -400,14 +410,19 @@ bool write_index_html()
 	html += "<style>\n";
 	html += "html,body{margin:0;padding:0;background:transparent;overflow:hidden;}\n";
 	html += "ul#lower-thirds-root{list-style:none;margin:0;padding:0;}\n";
-	html += ".lower-third{position:absolute;left:5%;bottom:5%;opacity:0;pointer-events:none;}\n";
+	html += ".lower-third{position:absolute;opacity:0;pointer-events:none;}\n";
+	html += ".lt-pos-bottom-left{left:5%;bottom:5%;top:auto;right:auto;transform:translate(0,0);}\n";
+	html += ".lt-pos-bottom-right{right:5%;bottom:5%;left:auto;top:auto;transform:translate(0,0);}\n";
+	html += ".lt-pos-top-left{left:5%;top:5%;right:auto;bottom:auto;transform:translate(0,0);}\n";
+	html += ".lt-pos-top-right{right:5%;top:5%;left:auto;bottom:auto;transform:translate(0,0);}\n";
+	html += ".lt-pos-center{top:50%;left:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);}\n";
 
 	for (const auto &cfg : g_items) {
 		std::string css = cfg.css_template;
-		css = replace_all(css, "{{ID}}",          cfg.id);
+		css = replace_all(css, "{{ID}}", cfg.id);
 		css = replace_all(css, "{{FONT_FAMILY}}", cfg.font_family);
-		css = replace_all(css, "{{BG_COLOR}}",    css_from_stored_color(cfg.bg_color));
-		css = replace_all(css, "{{TEXT_COLOR}}",  css_from_stored_color(cfg.text_color));
+		css = replace_all(css, "{{BG_COLOR}}", css_from_stored_color(cfg.bg_color));
+		css = replace_all(css, "{{TEXT_COLOR}}", css_from_stored_color(cfg.text_color));
 		html += css;
 		html += "\n";
 	}
@@ -417,15 +432,16 @@ bool write_index_html()
 	for (const auto &cfg : g_items) {
 		std::string item = cfg.html_template;
 
-		std::string animInTpl  = (cfg.anim_in  == "custom") ? cfg.custom_anim_in  : cfg.anim_in;
+		std::string animInTpl = (cfg.anim_in == "custom") ? cfg.custom_anim_in : cfg.anim_in;
 		std::string animOutTpl = (cfg.anim_out == "custom") ? cfg.custom_anim_out : cfg.anim_out;
 
-		item = replace_all(item, "{{ID}}",              cfg.id);
-		item = replace_all(item, "{{TITLE}}",           cfg.title);
-		item = replace_all(item, "{{SUBTITLE}}",        cfg.subtitle);
+		item = replace_all(item, "{{ID}}", cfg.id);
+		item = replace_all(item, "{{TITLE}}", cfg.title);
+		item = replace_all(item, "{{SUBTITLE}}", cfg.subtitle);
 		item = replace_all(item, "{{PROFILE_PICTURE}}", cfg.profile_picture);
-		item = replace_all(item, "{{ANIM_IN}}",         animInTpl);
-		item = replace_all(item, "{{ANIM_OUT}}",        animOutTpl);
+		item = replace_all(item, "{{ANIM_IN}}", animInTpl);
+		item = replace_all(item, "{{ANIM_OUT}}", animOutTpl);
+		item = replace_all(item, "{{LT_POSITION}}", cfg.lt_position);
 
 		html += item;
 		html += "\n";
@@ -458,7 +474,7 @@ bool write_index_html()
 
 	jsAllAnims += "];\n";
 
-	const char *defaultAnimIn  = !AnimInOptions.empty()  ? AnimInOptions.front().value  : "animate__fadeInUp";
+	const char *defaultAnimIn = !AnimInOptions.empty() ? AnimInOptions.front().value : "animate__fadeInUp";
 	const char *defaultAnimOut = !AnimOutOptions.empty() ? AnimOutOptions.front().value : "animate__fadeOutDown";
 
 	html += "<script>\n";
@@ -467,7 +483,7 @@ bool write_index_html()
 	html += "  const byId = {};\n";
 	html += "  nodes.forEach(li => { if (li.id) byId[li.id] = li; });\n";
 	html += jsAllAnims;
-	html += "  let lastActiveId = null;\n";
+	html += "  const lastVisible = new Set();\n";
 	html += "  function clearAnim(li, cfg){\n";
 	html += "    ALL_ANIMS.forEach(a => li.classList.remove(a));\n";
 	html += "    if (cfg) {\n";
@@ -475,12 +491,18 @@ bool write_index_html()
 	html += "      if (cfg.anim_out) li.classList.remove(cfg.anim_out);\n";
 	html += "    }\n";
 	html += "  }\n";
-	html += "  function applyState(activeId, animMap){\n";
-	html += "    if (activeId === lastActiveId) return;\n";
-	html += "    // animate OUT previous\n";
-	html += "    if (lastActiveId && byId[lastActiveId]) {\n";
-	html += "      const li = byId[lastActiveId];\n";
-	html += "      const cfg = animMap[lastActiveId] || {};\n";
+	html += "  function applyState(visibleIds, animMap){\n";
+	html += "    const toHide = [];\n";
+	html += "    const toShow = [];\n";
+	html += "    // which ids should be hidden now\n";
+	html += "    lastVisible.forEach(id => { if (!visibleIds.has(id)) toHide.push(id); });\n";
+	html += "    // which ids should be newly shown\n";
+	html += "    visibleIds.forEach(id => { if (!lastVisible.has(id)) toShow.push(id); });\n";
+	html += "    // animate OUT those that are no longer visible\n";
+	html += "    for (const id of toHide) {\n";
+	html += "      const li = byId[id];\n";
+	html += "      if (!li) continue;\n";
+	html += "      const cfg = animMap[id] || {};\n";
 	html += "      const animOut = cfg.anim_out || '";
 	html += defaultAnimOut;
 	html += "';\n";
@@ -499,10 +521,11 @@ bool write_index_html()
 	html += "        li.style.opacity = '0';\n";
 	html += "      }\n";
 	html += "    }\n";
-	html += "    // animate IN new\n";
-	html += "    if (activeId && byId[activeId]) {\n";
-	html += "      const li = byId[activeId];\n";
-	html += "      const cfg = animMap[activeId] || {};\n";
+	html += "    // animate IN those that became visible\n";
+	html += "    for (const id of toShow) {\n";
+	html += "      const li = byId[id];\n";
+	html += "      if (!li) continue;\n";
+	html += "      const cfg = animMap[id] || {};\n";
 	html += "      const animIn = cfg.anim_in || '";
 	html += defaultAnimIn;
 	html += "';\n";
@@ -513,7 +536,9 @@ bool write_index_html()
 	html += "        li.classList.add(animIn);\n";
 	html += "      }\n";
 	html += "    }\n";
-	html += "    lastActiveId = activeId;\n";
+	html += "    // update lastVisible snapshot\n";
+	html += "    lastVisible.clear();\n";
+	html += "    visibleIds.forEach(id => lastVisible.add(id));\n";
 	html += "  }\n";
 	html += "  async function tick(){\n";
 	html += "    try {\n";
@@ -521,7 +546,7 @@ bool write_index_html()
 	html += "      if (!res.ok) return;\n";
 	html += "      const data = await res.json();\n";
 	html += "      const items = data.items || [];\n";
-	html += "      let activeId = '';\n";
+	html += "      const visibleIds = new Set();\n";
 	html += "      const animMap = {};\n";
 	html += "      for (const it of items) {\n";
 	html += "        if (!it || !it.id) continue;\n";
@@ -533,10 +558,10 @@ bool write_index_html()
 	html += "          anim_in:  effectiveIn  || '',\n";
 	html += "          anim_out: effectiveOut || ''\n";
 	html += "        };\n";
-	html += "        if (!activeId && it.visible)\n";
-	html += "          activeId = it.id;\n";
+	html += "        if (it.visible)\n";
+	html += "          visibleIds.add(it.id);\n";
 	html += "      }\n";
-	html += "      applyState(activeId, animMap);\n";
+	html += "      applyState(visibleIds, animMap);\n";
 	html += "    } catch(e) {\n";
 	html += "      // ignore\n";
 	html += "    }\n";
@@ -712,6 +737,7 @@ bool save_state_json()
 		obs_data_set_string(item, "custom_anim_in", cfg.custom_anim_in.c_str());
 		obs_data_set_string(item, "custom_anim_out", cfg.custom_anim_out.c_str());
 		obs_data_set_string(item, "font_family", cfg.font_family.c_str());
+		obs_data_set_string(item, "lt_position", cfg.lt_position.c_str());
 		obs_data_set_string(item, "bg_color", cfg.bg_color.c_str());
 		obs_data_set_string(item, "text_color", cfg.text_color.c_str());
 		obs_data_set_string(item, "html_template", cfg.html_template.c_str());
@@ -783,6 +809,9 @@ bool load_state_json()
 			cfg.visible = obs_data_get_bool(item, "visible");
 			cfg.hotkey = obs_data_get_string(item, "hotkey");
 			cfg.profile_picture = obs_data_get_string(item, "profile_picture");
+			cfg.lt_position = obs_data_get_string(item, "lt_position");
+			if (cfg.lt_position.empty())
+				cfg.lt_position = "lt-pos-bottom-left";
 
 			g_items.push_back(cfg);
 

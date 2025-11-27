@@ -162,6 +162,7 @@ void LowerThirdSettingsDialog::onExportTemplateClicked()
 	obj["custom_anim_in"] = QString::fromStdString(cfg->custom_anim_in);
 	obj["custom_anim_out"] = QString::fromStdString(cfg->custom_anim_out);
 	obj["font_family"] = QString::fromStdString(cfg->font_family);
+	obj["lt_position"] = QString::fromStdString(cfg->lt_position);
 	obj["bg_color"] = QString::fromStdString(cfg->bg_color);
 	obj["text_color"] = QString::fromStdString(cfg->text_color);
 	obj["bound_scene"] = QString::fromStdString(cfg->bound_scene);
@@ -232,189 +233,240 @@ LowerThirdSettingsDialog::LowerThirdSettingsDialog(QWidget *parent) : QDialog(pa
 	auto *root = new QVBoxLayout(this);
 
 	auto *contentBox = new QGroupBox(tr("Content && Media"), this);
-	auto *contentLayout = new QFormLayout(contentBox);
+	auto *contentLayout = new QGridLayout(contentBox);
 
+	auto *titleLabel = new QLabel(tr("Title:"), this);
 	titleEdit = new QLineEdit(this);
-	contentLayout->addRow(tr("Title:"), titleEdit);
 
+	auto *picRow = new QHBoxLayout();
+	profilePictureEdit = new QLineEdit(this);
+	profilePictureEdit->setReadOnly(true);
+
+	browseProfilePictureBtn = new QPushButton(this);
+	browseProfilePictureBtn->setCursor(Qt::PointingHandCursor);
+	browseProfilePictureBtn->setIcon(style()->standardIcon(QStyle::SP_DirOpenIcon));
+	browseProfilePictureBtn->setToolTip(tr("Browse profile picture..."));
+
+	picRow->addWidget(profilePictureEdit, 1);
+	picRow->addWidget(browseProfilePictureBtn);
+
+	auto *picLabel = new QLabel(tr("Profile picture:"), this);
+
+	auto *subtitleLabel = new QLabel(tr("Subtitle:"), this);
 	subtitleEdit = new QLineEdit(this);
-	contentLayout->addRow(tr("Subtitle:"), subtitleEdit);
 
-	{
-		auto *picRow = new QHBoxLayout();
-		profilePictureEdit = new QLineEdit(this);
-		profilePictureEdit->setReadOnly(true);
+	int row = 0;
+	contentLayout->addWidget(titleLabel, row, 0);
+	contentLayout->addWidget(titleEdit, row, 1);
+	contentLayout->addWidget(picLabel, row, 2);
+	contentLayout->addLayout(picRow, row, 3);
 
-		browseProfilePictureBtn = new QPushButton(this);
-		browseProfilePictureBtn->setCursor(Qt::PointingHandCursor);
-		browseProfilePictureBtn->setIcon(style()->standardIcon(QStyle::SP_DirOpenIcon));
-		browseProfilePictureBtn->setToolTip(tr("Browse profile picture..."));
+	row++;
+	contentLayout->addWidget(subtitleLabel, row, 0);
+	contentLayout->addWidget(subtitleEdit, row, 1, 1, 3);
 
-		picRow->addWidget(profilePictureEdit, 1);
-		picRow->addWidget(browseProfilePictureBtn);
-
-		contentLayout->addRow(tr("Profile picture:"), picRow);
-	}
+	contentLayout->setColumnStretch(1, 1);
+	contentLayout->setColumnStretch(3, 1);
 
 	root->addWidget(contentBox);
 
 	auto *styleBox = new QGroupBox(tr("Style"), this);
-	auto *styleLayout = new QVBoxLayout(styleBox);
+	auto *styleGrid = new QGridLayout(styleBox);
 
-	{
-		auto *row = new QHBoxLayout();
-
-		auto *lblIn = new QLabel(tr("Anim In:"), this);
-		animInCombo = new QComboBox(this);
-		for (const auto &opt : smart_lt::AnimInOptions) {
-			animInCombo->addItem(tr(opt.label), QString::fromUtf8(opt.value));
-		}
-
-		auto *lblOut = new QLabel(tr("Anim Out:"), this);
-		animOutCombo = new QComboBox(this);
-		for (const auto &opt : smart_lt::AnimOutOptions) {
-			animOutCombo->addItem(tr(opt.label), QString::fromUtf8(opt.value));
-		}
-
-		auto *lblFont = new QLabel(tr("Font:"), this);
-		fontCombo = new QFontComboBox(this);
-		fontCombo->setEditable(false);
-
-		row->addWidget(lblIn);
-		row->addWidget(animInCombo);
-		row->addSpacing(8);
-		row->addWidget(lblOut);
-		row->addWidget(animOutCombo);
-		row->addSpacing(8);
-		row->addWidget(lblFont);
-		row->addWidget(fontCombo, 1);
-
-		styleLayout->addLayout(row);
+	auto *lblIn = new QLabel(tr("Anim In:"), this);
+	animInCombo = new QComboBox(this);
+	for (const auto &opt : smart_lt::AnimInOptions) {
+		animInCombo->addItem(tr(opt.label), QString::fromUtf8(opt.value));
 	}
+	auto *colAnimIn = new QVBoxLayout();
+	colAnimIn->addWidget(lblIn);
+	colAnimIn->addWidget(animInCombo);
 
-	{
-		auto *row = new QHBoxLayout();
-
-		customAnimInLabel = new QLabel(tr("Custom In class:"), this);
-		customAnimInEdit = new QLineEdit(this);
-		customAnimInEdit->setPlaceholderText(tr("e.g. myFadeIn"));
-
-		customAnimOutLabel = new QLabel(tr("Custom Out class:"), this);
-		customAnimOutEdit = new QLineEdit(this);
-		customAnimOutEdit->setPlaceholderText(tr("e.g. myFadeOut"));
-
-		row->addWidget(customAnimInLabel);
-		row->addWidget(customAnimInEdit);
-		row->addSpacing(8);
-		row->addWidget(customAnimOutLabel);
-		row->addWidget(customAnimOutEdit);
-
-		styleLayout->addLayout(row);
+	auto *lblOut = new QLabel(tr("Anim Out:"), this);
+	animOutCombo = new QComboBox(this);
+	for (const auto &opt : smart_lt::AnimOutOptions) {
+		animOutCombo->addItem(tr(opt.label), QString::fromUtf8(opt.value));
 	}
+	auto *colAnimOut = new QVBoxLayout();
+	colAnimOut->addWidget(lblOut);
+	colAnimOut->addWidget(animOutCombo);
 
-	{
-		auto *row = new QHBoxLayout();
-		auto *lblBg = new QLabel(tr("Background:"), this);
-		bgColorBtn = new QPushButton(tr("Pick"), this);
-		auto *lblText = new QLabel(tr("Text color:"), this);
-		textColorBtn = new QPushButton(tr("Pick"), this);
+	auto *lblFont = new QLabel(tr("Font:"), this);
+	fontCombo = new QFontComboBox(this);
+	fontCombo->setEditable(false);
+	auto *colFont = new QVBoxLayout();
+	colFont->addWidget(lblFont);
+	colFont->addWidget(fontCombo);
 
-		row->addWidget(lblBg);
-		row->addWidget(bgColorBtn);
-		row->addSpacing(12);
-		row->addWidget(lblText);
-		row->addWidget(textColorBtn);
-		row->addStretch(1);
+	row = 0;
+	styleGrid->addLayout(colAnimIn, row, 0);
+	styleGrid->addLayout(colAnimOut, row, 1);
+	styleGrid->addLayout(colFont, row, 2);
 
-		styleLayout->addLayout(row);
-
-		connect(bgColorBtn, &QPushButton::clicked, this, &LowerThirdSettingsDialog::onPickBgColor);
-		connect(textColorBtn, &QPushButton::clicked, this, &LowerThirdSettingsDialog::onPickTextColor);
+	auto *lblPos = new QLabel(tr("Position:"), this);
+	ltPosCombo = new QComboBox(this);
+	for (const auto &opt : smart_lt::LtPositionOptions) {
+		ltPosCombo->addItem(tr(opt.label), QString::fromUtf8(opt.value));
 	}
+	auto *colPos = new QVBoxLayout();
+	colPos->addWidget(lblPos);
+	colPos->addWidget(ltPosCombo);
+
+	customAnimInLabel = new QLabel(tr("Custom In class:"), this);
+	customAnimInEdit = new QLineEdit(this);
+	customAnimInEdit->setPlaceholderText(tr("e.g. myFadeIn"));
+	auto *colCustomIn = new QVBoxLayout();
+	colCustomIn->addWidget(customAnimInLabel);
+	colCustomIn->addWidget(customAnimInEdit);
+
+	customAnimOutLabel = new QLabel(tr("Custom Out class:"), this);
+	customAnimOutEdit = new QLineEdit(this);
+	customAnimOutEdit->setPlaceholderText(tr("e.g. myFadeOut"));
+	auto *colCustomOut = new QVBoxLayout();
+	colCustomOut->addWidget(customAnimOutLabel);
+	colCustomOut->addWidget(customAnimOutEdit);
+
+	row++;
+	styleGrid->addLayout(colPos, row, 0);
+	styleGrid->addLayout(colCustomIn, row, 1);
+	styleGrid->addLayout(colCustomOut, row, 2);
+
+	auto *lblBg = new QLabel(tr("Background:"), this);
+	bgColorBtn = new QPushButton(tr("Pick"), this);
+	auto *colBg = new QVBoxLayout();
+	colBg->addWidget(lblBg);
+	colBg->addWidget(bgColorBtn);
+
+	auto *lblText = new QLabel(tr("Text color:"), this);
+	textColorBtn = new QPushButton(tr("Pick"), this);
+	auto *colText = new QVBoxLayout();
+	colText->addWidget(lblText);
+	colText->addWidget(textColorBtn);
+
+	row++;
+	styleGrid->addLayout(colBg, row, 0);
+	styleGrid->addLayout(colText, row, 1);
+	styleGrid->setColumnStretch(0, 1);
+	styleGrid->setColumnStretch(1, 1);
+	styleGrid->setColumnStretch(2, 1);
+
+	connect(bgColorBtn, &QPushButton::clicked, this, &LowerThirdSettingsDialog::onPickBgColor);
+	connect(textColorBtn, &QPushButton::clicked, this, &LowerThirdSettingsDialog::onPickTextColor);
+	connect(ltPosCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+		&LowerThirdSettingsDialog::onLtPosChanged);
 
 	root->addWidget(styleBox);
 
 	auto *behaviorBox = new QGroupBox(tr("Behavior"), this);
-	auto *behaviorLayout = new QFormLayout(behaviorBox);
+	auto *behaviorGrid = new QGridLayout(behaviorBox);
 
+	auto *hotkeyLabel = new QLabel(tr("Hotkey:"), this);
 	hotkeyEdit = new QKeySequenceEdit(this);
-	behaviorLayout->addRow(tr("Hotkey:"), hotkeyEdit);
 
+	clearHotkeyBtn = new QPushButton(this);
+	clearHotkeyBtn->setCursor(Qt::PointingHandCursor);
+	clearHotkeyBtn->setFlat(true);
+	clearHotkeyBtn->setIcon(style()->standardIcon(QStyle::SP_DialogResetButton));
+	clearHotkeyBtn->setToolTip(tr("Clear hotkey"));
+	clearHotkeyBtn->setFocusPolicy(Qt::NoFocus);
+
+	auto *hotkeyRowLayout = new QHBoxLayout();
+	hotkeyRowLayout->addWidget(hotkeyEdit, 1);
+	hotkeyRowLayout->addWidget(clearHotkeyBtn);
+
+	auto *hotkeyColLayout = new QVBoxLayout();
+	hotkeyColLayout->addWidget(hotkeyLabel);
+	hotkeyColLayout->addLayout(hotkeyRowLayout);
+
+	// Column 1: Bind to scene
+	auto *sceneLabel = new QLabel(tr("Bind to scene:"), this);
 	sceneCombo = new QComboBox(this);
-	behaviorLayout->addRow(tr("Bind to scene:"), sceneCombo);
+
+	auto *sceneColLayout = new QVBoxLayout();
+	sceneColLayout->addWidget(sceneLabel);
+	sceneColLayout->addWidget(sceneCombo);
+
+	behaviorGrid->addLayout(hotkeyColLayout, 0, 0);
+	behaviorGrid->addLayout(sceneColLayout, 0, 1);
+	behaviorGrid->setColumnStretch(0, 1);
+	behaviorGrid->setColumnStretch(1, 1);
 
 	root->addWidget(behaviorBox);
 
 	connect(sceneCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
 		&LowerThirdSettingsDialog::onSceneBindingChanged);
 
-	auto *tplBox = new QGroupBox(tr("Templates"), this);
-	auto *tplLayout = new QVBoxLayout(tplBox);
+	connect(clearHotkeyBtn, &QPushButton::clicked, this, [this]() {
+		hotkeyEdit->setKeySequence(QKeySequence());
+		onHotkeyChanged(hotkeyEdit->keySequence());
+	});
 
-	{
-		auto *row = new QHBoxLayout();
-		auto *lbl = new QLabel(tr("HTML Template:"), this);
-		auto *expandHtmlBtn = new QPushButton(this);
-		expandHtmlBtn->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
-		expandHtmlBtn->setCursor(Qt::PointingHandCursor);
-		expandHtmlBtn->setToolTip(tr("Open HTML editor..."));
-		expandHtmlBtn->setFlat(true);
+	auto *tplRow = new QHBoxLayout();
 
-		row->addWidget(lbl);
-		row->addStretch(1);
-		row->addWidget(expandHtmlBtn);
+	auto *htmlCard = new QGroupBox(tr("HTML Template"), this);
+	auto *htmlLayout = new QVBoxLayout(htmlCard);
 
-		tplLayout->addLayout(row);
+	auto *htmlHeaderRow = new QHBoxLayout();
+	auto *expandHtmlBtn = new QPushButton(this);
+	expandHtmlBtn->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+	expandHtmlBtn->setCursor(Qt::PointingHandCursor);
+	expandHtmlBtn->setToolTip(tr("Open HTML editor..."));
+	expandHtmlBtn->setFlat(true);
 
-		htmlEdit = new QPlainTextEdit(this);
-		htmlEdit->setPlaceholderText(
-			"<li id=\"{{ID}}\" class=\"lower-third animate__animated {{ANIM_IN}}\">\n"
-			"  <div class=\"lt-inner\">\n"
-			"    <!-- Optional avatar: <img class=\"lt-avatar\" src=\"{{PROFILE_PICTURE}}\" /> -->\n"
-			"    <div class=\"lt-title\">{{TITLE}}</div>\n"
-			"    <div class=\"lt-subtitle\">{{SUBTITLE}}</div>\n"
-			"  </div>\n"
-			"</li>\n");
+	htmlHeaderRow->addStretch(1);
+	htmlHeaderRow->addWidget(expandHtmlBtn);
 
-		tplLayout->addWidget(htmlEdit, 1);
+	htmlLayout->addLayout(htmlHeaderRow);
 
-		connect(expandHtmlBtn, &QPushButton::clicked, this, &LowerThirdSettingsDialog::onOpenHtmlEditorDialog);
-	}
+	htmlEdit = new QPlainTextEdit(this);
+	htmlEdit->setPlaceholderText(
+		"<li id=\"{{ID}}\" class=\"lower-third lt-pos-bottom-left animate__animated {{ANIM_IN}}\">\n"
+		"  <div class=\"lt-inner\">\n"
+		"    <!-- Optional avatar: <img class=\"lt-avatar\" src=\"{{PROFILE_PICTURE}}\" /> -->\n"
+		"    <div class=\"lt-title\">{{TITLE}}</div>\n"
+		"    <div class=\"lt-subtitle\">{{SUBTITLE}}</div>\n"
+		"  </div>\n"
+		"</li>\n");
+	htmlLayout->addWidget(htmlEdit, 1);
 
-	{
-		auto *row = new QHBoxLayout();
-		auto *lbl = new QLabel(tr("CSS Template:"), this);
-		auto *expandCssBtn = new QPushButton(this);
-		expandCssBtn->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
-		expandCssBtn->setCursor(Qt::PointingHandCursor);
-		expandCssBtn->setToolTip(tr("Open CSS editor..."));
-		expandCssBtn->setFlat(true);
+	connect(expandHtmlBtn, &QPushButton::clicked, this, &LowerThirdSettingsDialog::onOpenHtmlEditorDialog);
 
-		row->addWidget(lbl);
-		row->addStretch(1);
-		row->addWidget(expandCssBtn);
+	tplRow->addWidget(htmlCard, 1);
 
-		tplLayout->addLayout(row);
+	auto *cssCard = new QGroupBox(tr("CSS Template"), this);
+	auto *cssLayout = new QVBoxLayout(cssCard);
 
-		cssEdit = new QPlainTextEdit(this);
-		cssEdit->setPlaceholderText("#{{ID}} .lt-inner {\n"
-					    "  font-family: {{FONT_FAMILY}}, sans-serif;\n"
-					    "  background: {{BG_COLOR}};\n"
-					    "  color: {{TEXT_COLOR}};\n"
-					    "}\n"
-					    "#{{ID}} .lt-avatar {\n"
-					    "  width: 56px;\n"
-					    "  height: 56px;\n"
-					    "  border-radius: 50%;\n"
-					    "  margin-right: 12px;\n"
-					    "}\n");
+	auto *cssHeaderRow = new QHBoxLayout();
+	auto *expandCssBtn = new QPushButton(this);
+	expandCssBtn->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+	expandCssBtn->setCursor(Qt::PointingHandCursor);
+	expandCssBtn->setToolTip(tr("Open CSS editor..."));
+	expandCssBtn->setFlat(true);
 
-		tplLayout->addWidget(cssEdit, 1);
+	cssHeaderRow->addStretch(1);
+	cssHeaderRow->addWidget(expandCssBtn);
 
-		connect(expandCssBtn, &QPushButton::clicked, this, &LowerThirdSettingsDialog::onOpenCssEditorDialog);
-	}
+	cssLayout->addLayout(cssHeaderRow);
 
-	root->addWidget(tplBox, 1);
+	cssEdit = new QPlainTextEdit(this);
+	cssEdit->setPlaceholderText("#{{ID}} .lt-inner {\n"
+				    "  font-family: {{FONT_FAMILY}}, sans-serif;\n"
+				    "  background: {{BG_COLOR}};\n"
+				    "  color: {{TEXT_COLOR}};\n"
+				    "}\n"
+				    "#{{ID}} .lt-avatar {\n"
+				    "  width: 56px;\n"
+				    "  height: 56px;\n"
+				    "  border-radius: 50%;\n"
+				    "  margin-right: 12px;\n"
+				    "}\n");
+	cssLayout->addWidget(cssEdit, 1);
+
+	connect(expandCssBtn, &QPushButton::clicked, this, &LowerThirdSettingsDialog::onOpenCssEditorDialog);
+
+	tplRow->addWidget(cssCard, 1);
+
+	root->addLayout(tplRow, 1);
 
 	buttonBox = new QDialogButtonBox(QDialogButtonBox::Cancel, this);
 	auto *applyBtn = buttonBox->addButton(tr("Save && Apply"), QDialogButtonBox::AcceptRole);
@@ -562,6 +614,21 @@ void LowerThirdSettingsDialog::loadFromState()
 	updateColorButton(bgColorBtn, *currentBgColor);
 	updateColorButton(textColorBtn, *currentTextColor);
 
+	if (ltPosCombo) {
+		const QString posValue = QString::fromStdString(cfg->lt_position);
+		int idx = -1;
+		for (int i = 0; i < ltPosCombo->count(); ++i) {
+			if (ltPosCombo->itemData(i).toString() == posValue) {
+				idx = i;
+				break;
+			}
+		}
+		if (idx >= 0)
+			ltPosCombo->setCurrentIndex(idx);
+		else if (ltPosCombo->count() > 0)
+			ltPosCombo->setCurrentIndex(0);
+	}
+
 	if (cfg->profile_picture.empty()) {
 		profilePictureEdit->clear();
 	} else {
@@ -593,6 +660,11 @@ void LowerThirdSettingsDialog::saveToState()
 	cfg->custom_anim_out = customAnimOutEdit->text().toStdString();
 
 	cfg->font_family = fontCombo->currentFont().family().toStdString();
+
+	if (ltPosCombo) {
+		const QString data = ltPosCombo->currentData().toString();
+		cfg->lt_position = data.toStdString();
+	}
 
 	if (currentBgColor)
 		cfg->bg_color = currentBgColor->name(QColor::HexRgb).toStdString();
@@ -849,6 +921,7 @@ void LowerThirdSettingsDialog::onImportTemplateClicked()
 	cfg->custom_anim_in = obj["custom_anim_in"].toString().toStdString();
 	cfg->custom_anim_out = obj["custom_anim_out"].toString().toStdString();
 	cfg->font_family = obj["font_family"].toString().toStdString();
+	cfg->lt_position = obj["lt_position"].toString().toStdString();
 	cfg->bg_color = obj["bg_color"].toString().toStdString();
 	cfg->text_color = obj["text_color"].toString().toStdString();
 	cfg->bound_scene = obj["bound_scene"].toString().toStdString();
@@ -941,4 +1014,14 @@ void LowerThirdSettingsDialog::onOpenHtmlEditorDialog()
 void LowerThirdSettingsDialog::onOpenCssEditorDialog()
 {
 	openTemplateEditorDialog(tr("Edit CSS Template"), cssEdit);
+}
+void LowerThirdSettingsDialog::onLtPosChanged(int)
+{
+	if (currentId.isEmpty())
+		return;
+
+	if (auto *cfg = get_by_id(currentId.toStdString())) {
+		cfg->lt_position = ltPosCombo->currentData().toString().toStdString();
+		smart_lt::save_state_json();
+	}
 }
