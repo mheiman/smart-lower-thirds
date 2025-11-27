@@ -46,7 +46,7 @@ private slots:
 private:
 	void rebuildList();
 	void updateRowActiveStyles();
-	void handleToggleVisible(const QString &id);
+	void handleToggleVisible(const QString &id, bool hideOthers = true);
 	void handleClone(const QString &id);
 	void handleOpenSettings(const QString &id);
 	void handleRemove(const QString &id);

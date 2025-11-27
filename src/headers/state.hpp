@@ -15,7 +15,7 @@ namespace smart_lt {
 	std::string clone_lower_third(const std::string &id);
 	void remove_lower_third(const std::string &id);
 	LowerThirdConfig *get_by_id(const std::string &id);
-	void toggle_active(const std::string &id);
+	void toggle_active(const std::string &id, bool hideOthers = true);
 	void set_active_exact(const std::string &id);
 	void handle_scene_changed();
 

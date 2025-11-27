@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Smart Lower Thirds – OBS Studio Plugin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description"
+        content="Smart Lower Thirds is a professional OBS Studio plugin that lets you create, manage, and automate unlimited lower thirds with a built-in local webserver." />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+
+    <style>
+        :root {
+            --bg: #050816;
+            --bg-alt: #0b1020;
+            --card-bg: #101528;
+            --accent: #3b82f6;
+            --accent-soft: rgba(59, 130, 246, 0.14);
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --border: rgba(148, 163, 184, 0.35);
+            --radius-lg: 18px;
+            --radius-pill: 999px;
+            --shadow-soft: 0 18px 45px rgba(15, 23, 42, 0.8);
+            --shadow-subtle: 0 8px 20px rgba(15, 23, 42, 0.6);
+            --max-width: 1120px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+            background: radial-gradient(circle at top, #111827 0, #020617 40%, #000 100%);
+            color: var(--text);
+            -webkit-font-smoothing: antialiased;
+            scroll-behavior: smooth;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        img {
+            max-width: 100%;
+            display: block;
+        }
+
+        .page {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            backdrop-filter: blur(18px);
+            background: linear-gradient(to bottom, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.78), transparent);
+            border-bottom: 1px solid rgba(31, 41, 55, 0.8);
+        }
+
+        .nav-inner {
+            max-width: var(--max-width);
+            margin: 0 auto;
+            padding: 0.75rem 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .nav-logo {
+            width: 32px;
+            height: 32px;
+            border-radius: 30%;
+            border: 1px solid var(--accent-soft);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.8rem;
+            color: var(--accent);
+            background: radial-gradient(circle at 30% 0, rgba(59, 130, 246, 0.3), transparent 55%),
+                radial-gradient(circle at 80% 120%, rgba(16, 185, 129, 0.26), transparent 60%);
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .nav-title {
+            display: flex;
+            flex-direction: column;
+            line-height: 1.1;
+        }
+
+        .nav-title-main {
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .nav-title-sub {
+            font-size: 0.7rem;
+            color: var(--muted);
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 0.9rem;
+            font-size: 0.82rem;
+            color: var(--muted);
+        }
+
+        .nav-links a {
+            padding: 0.25rem 0.6rem;
+            border-radius: 999px;
+            transition: background 0.16s ease, color 0.16s ease, transform 0.1s ease;
+        }
+
+        .nav-links a:hover {
+            background: rgba(31, 41, 55, 0.9);
+            color: #f9fafb;
+            transform: translateY(-1px);
+        }
+
+        .nav-cta {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn {
+            border-radius: var(--radius-pill);
+            border: 1px solid transparent;
+            font-size: 0.82rem;
+            font-weight: 500;
+            padding: 0.4rem 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            cursor: pointer;
+            transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6, #22c55e);
+            color: #0b1020;
+            box-shadow: var(--shadow-soft);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 24px 55px rgba(15, 23, 42, 0.9);
+        }
+
+        .btn-ghost {
+            background: rgba(15, 23, 42, 0.8);
+            border-color: rgba(51, 65, 85, 0.9);
+            color: var(--muted);
+        }
+
+        .btn-ghost:hover {
+            background: rgba(15, 23, 42, 1);
+            color: #e5e7eb;
+        }
+
+        main {
+            flex: 1;
+        }
+
+        .section {
+            padding: 2.5rem 1.25rem;
+        }
+
+        .section-inner {
+            max-width: var(--max-width);
+            margin: 0 auto;
+        }
+
+        /* Hero */
+        .hero {
+            padding-top: 2.75rem;
+            padding-bottom: 2.5rem;
+        }
+
+        .hero-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+            gap: 2.4rem;
+            align-items: center;
+        }
+
+        @media (max-width: 880px) {
+            .hero-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+
+        .hero-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            padding: 0.18rem 0.65rem;
+            border-radius: 999px;
+            border: 1px solid rgba(55, 65, 81, 0.8);
+            background: radial-gradient(circle at 0 0, rgba(59, 130, 246, 0.25), transparent 60%),
+                rgba(15, 23, 42, 0.9);
+            font-size: 0.72rem;
+            color: var(--muted);
+            margin-bottom: 0.9rem;
+        }
+
+        .hero-eyebrow span.tag {
+            font-size: 0.7rem;
+            padding: 0.12rem 0.5rem;
+            border-radius: 999px;
+            background: rgba(34, 197, 94, 0.16);
+            color: #bbf7d0;
+        }
+
+        .hero-title {
+            font-size: clamp(2.1rem, 3vw, 2.7rem);
+            line-height: 1.1;
+            margin-bottom: 0.7rem;
+        }
+
+        .hero-title span.highlight {
+            background: linear-gradient(120deg, #3b82f6, #a855f7, #22c55e);
+            -webkit-background-clip: text;
+            color: transparent;
+        }
+
+        .hero-subtitle {
+            font-size: 0.95rem;
+            color: var(--muted);
+            max-width: 34rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .hero-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-bottom: 1.3rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.18rem 0.6rem;
+            border-radius: 999px;
+            border: 1px solid rgba(55, 65, 81, 0.8);
+            background: rgba(15, 23, 42, 0.9);
+            font-size: 0.72rem;
+            color: var(--muted);
+        }
+
+        .badge-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 999px;
+            background: #22c55e;
+            box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.16);
+        }
+
+        .hero-cta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .hero-footnote {
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+
+        .hero-footnote span {
+            color: #e5e7eb;
+        }
+
+        .hero-preview-card {
+            background: radial-gradient(circle at 10% 0, rgba(59, 130, 246, 0.35), transparent 55%),
+                radial-gradient(circle at 90% 120%, rgba(34, 197, 94, 0.3), transparent 60%),
+                var(--card-bg);
+            border-radius: 26px;
+            padding: 1.1rem;
+            border: 1px solid rgba(75, 85, 99, 0.8);
+            box-shadow: var(--shadow-soft);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-preview-label {
+            font-size: 0.78rem;
+            color: var(--muted);
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .hero-preview-label span strong {
+            color: #e5e7eb;
+        }
+
+        .hero-preview-gifs {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            border-radius: 18px;
+            overflow: hidden;
+            border: 1px solid rgba(30, 64, 175, 0.8);
+            background: #020617;
+        }
+
+        .hero-preview-gifs img {
+            width: 100%;
+            object-fit: cover;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1.3rem;
+        }
+
+        @media (max-width: 960px) {
+            .features-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
+            .features-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+
+        .feature-card {
+            background: linear-gradient(to bottom right, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.9));
+            border-radius: var(--radius-lg);
+            padding: 1rem;
+            border: 1px solid rgba(55, 65, 81, 0.85);
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .feature-eyebrow {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-bottom: 0.4rem;
+        }
+
+        .feature-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 0.35rem;
+        }
+
+        .feature-body {
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin-bottom: 0.45rem;
+        }
+
+        .feature-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            font-size: 0.82rem;
+            color: var(--muted);
+        }
+
+        .feature-list li::before {
+            content: "•";
+            margin-right: 0.35rem;
+            color: var(--accent);
+        }
+
+        .section-title {
+            font-size: 1.3rem;
+            margin-bottom: 0.3rem;
+        }
+
+        .section-subtitle {
+            font-size: 0.9rem;
+            color: var(--muted);
+            margin-bottom: 1.25rem;
+            max-width: 36rem;
+        }
+
+        .split {
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+            gap: 1.8rem;
+            align-items: flex-start;
+        }
+
+        @media (max-width: 880px) {
+            .split {
+                grid-template-columns: minmax(0, 1fr);
+            }
+        }
+
+        .card {
+            background: linear-gradient(to bottom right, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.9));
+            border-radius: var(--radius-lg);
+            padding: 1rem;
+            border: 1px solid rgba(55, 65, 81, 0.9);
+            box-shadow: var(--shadow-subtle);
+        }
+
+        .card h3 {
+            margin-top: 0;
+            margin-bottom: 0.4rem;
+            font-size: 1rem;
+        }
+
+        .card p {
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin-bottom: 0.7rem;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+            margin-top: 0.4rem;
+        }
+
+        th,
+        td {
+            padding: 0.4rem 0.5rem;
+            border-bottom: 1px solid rgba(55, 65, 81, 0.8);
+            text-align: left;
+        }
+
+        th {
+            background: rgba(15, 23, 42, 0.9);
+            font-weight: 600;
+        }
+
+        tbody tr:nth-child(even) {
+            background: rgba(15, 23, 42, 0.75);
+        }
+
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+                monospace;
+            font-size: 0.82rem;
+            padding: 0.1rem 0.3rem;
+            border-radius: 4px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid rgba(55, 65, 81, 0.9);
+        }
+
+        .dock-settings-wrapper {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-top: 2.2rem;
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid rgba(31, 41, 55, 0.9);
+            padding: 1.2rem 1.25rem 1.7rem;
+            margin-top: 1.5rem;
+            background: radial-gradient(circle at top, rgba(37, 99, 235, 0.16), transparent 55%),
+                rgba(3, 7, 18, 0.98);
+        }
+
+        .footer-inner {
+            max-width: var(--max-width);
+            margin: 0 auto;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 0.8rem;
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+
+        .footer-inner a {
+            color: #93c5fd;
+        }
+
+        @media (max-width: 640px) {
+            .nav-links {
+                display: none;
+            }
+
+            .nav-inner {
+                padding-inline: 1rem;
+            }
+
+            .hero {
+                padding-inline: 1rem;
+            }
+
+            .section {
+                padding-inline: 1rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="page">
+        <header>
+            <div class="nav-inner">
+                <div class="nav-left">
+                    <div class="nav-logo">SLT</div>
+                    <div class="nav-title">
+                        <div class="nav-title-main">Smart Lower Thirds</div>
+                        <div class="nav-title-sub">Professional OBS Studio Plugin</div>
+                    </div>
+                </div>
+
+                <nav class="nav-links" aria-label="Main navigation">
+                    <a href="#features">Features</a>
+                    <a href="#placeholders">Placeholders</a>
+                    <a href="#templates">Templates</a>
+                    <a href="#install">Install</a>
+                    <a href="#support">Support</a>
+                </nav>
+
+                <div class="nav-cta">
+                    <a class="btn btn-ghost" href="https://github.com/mmlTools/smart-lower-thirds" target="_blank"
+                        rel="noreferrer">GitHub</a>
+                    <a class="btn btn-primary" href="https://ko-fi.com/mmltech/shop" target="_blank"
+                        rel="noreferrer">Get Templates</a>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <section class="section hero" id="top">
+                <div class="section-inner">
+                    <div class="hero-grid">
+                        <div>
+                            <div class="hero-eyebrow">
+                                <span class="tag">New</span>
+                                Smart, animated lower thirds for OBS Studio
+                            </div>
+                            <h1 class="hero-title">
+                                Unlimited, <span class="highlight">smart lower thirds</span> for professional streams.
+                            </h1>
+                            <p class="hero-subtitle">
+                                Smart Lower Thirds lets you create, manage, and automate beautiful lower thirds powered
+                                by a built-in
+                                local webserver, scene binding, hotkeys, and importable templates.
+                            </p>
+
+                            <div class="hero-badges">
+                                <div class="badge">
+                                    <span class="badge-dot"></span>
+                                    OBS Studio Plugin
+                                </div>
+                                <div class="badge">Local webserver overlay</div>
+                                <div class="badge">Unlimited lower thirds</div>
+                            </div>
+
+                            <div class="hero-cta-row">
+                                <a class="btn btn-primary"
+                                    href="https://github.com/mmlTools/smart-lower-thirds/releases" target="_blank"
+                                    rel="noreferrer">
+                                    ⬇ Download Plugin
+                                </a>
+                                <a class="btn btn-ghost" href="#features">
+                                    👀 View Features
+                                </a>
+                            </div>
+
+                            <div class="hero-footnote">
+                                Works great for <span>streamers</span>, <span>content creators</span>, and
+                                <span>professional broadcast studios</span>.
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="hero-preview-card" aria-label="Preview of Smart Lower Thirds output">
+                                <div class="hero-preview-label">
+                                    <span><strong>Live Output</strong> · Example lower thirds generated by the
+                                        plugin</span>
+                                    <span style="font-size:0.72rem; color:#9ca3af;">Browser Source · 127.0.0.1</span>
+                                </div>
+                                <div class="hero-preview-gifs">
+                                    <img src="presentation-1.gif" alt="Smart Lower Thirds Presentation 1" />
+                                    <img src="presentation-2.gif" alt="Smart Lower Thirds Presentation 2" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section" id="features">
+                <div class="section-inner">
+                    <h2 class="section-title">Core features at a glance</h2>
+                    <p class="section-subtitle">
+                        From unlimited lower thirds to scene-aware automation, Smart Lower Thirds is designed to fit
+                        into any
+                        professional OBS workflow.
+                    </p>
+
+                    <div class="features-grid">
+                        <article class="feature-card">
+                            <div class="feature-eyebrow">Creation</div>
+                            <h3 class="feature-title">Create unlimited lower thirds</h3>
+                            <p class="feature-body">
+                                Build as many layouts as you need for hosts, guests, segments, sponsors, social tags,
+                                and more.
+                            </p>
+                            <ul class="feature-list">
+                                <li>Independent settings per lower third</li>
+                                <li>Different layouts for each show or scene</li>
+                                <li>Perfect for interviews, panels, and events</li>
+                            </ul>
+                        </article>
+
+                        <article class="feature-card">
+                            <div class="feature-eyebrow">Overlay delivery</div>
+                            <h3 class="feature-title">Built-in local webserver</h3>
+                            <p class="feature-body">
+                                The plugin exposes a persistent Browser Source overlay that works across all your
+                                scenes.
+                            </p>
+                            <ul class="feature-list">
+                                <li>No external hosting or manual HTML files</li>
+                                <li>All scenes share the same overlay endpoint</li>
+                                <li>Supports instant reload & live preview</li>
+                            </ul>
+                        </article>
+
+                        <article class="feature-card">
+                            <div class="feature-eyebrow">Control</div>
+                            <h3 class="feature-title">Hotkeys & scene binding</h3>
+                            <p class="feature-body">
+                                Show the right lower third at the right time with OBS hotkeys and automatic scene
+                                binding logic.
+                            </p>
+                            <ul class="feature-list">
+                                <li>Bind show/hide to OBS hotkeys</li>
+                                <li>Automatically show on scene switch</li>
+                                <li>Focus mode: only one bound lower third visible</li>
+                            </ul>
+                        </article>
+
+                        <article class="feature-card">
+                            <div class="feature-eyebrow">Design</div>
+                            <h3 class="feature-title">Professional settings dialog</h3>
+                            <p class="feature-body">
+                                Fine-tune typography, colors, animation, avatars, and positioning in a dedicated dock
+                                and settings
+                                window.
+                            </p>
+                            <ul class="feature-list">
+                                <li>Animate.css-powered in/out animations</li>
+                                <li>Font, size, weight, and color controls</li>
+                                <li>Top/bottom corner and center presets</li>
+                            </ul>
+                        </article>
+
+                        <article class="feature-card">
+                            <div class="feature-eyebrow">Workflow</div>
+                            <h3 class="feature-title">Import & export templates</h3>
+                            <p class="feature-body">
+                                Package lower thirds as shareable templates using minizip-powered `.zip` bundles.
+                            </p>
+                            <ul class="feature-list">
+                                <li>Share designs with your team or community</li>
+                                <li>Bundle HTML, CSS, colors, and animation config</li>
+                                <li>Easy backup across machines</li>
+                            </ul>
+                        </article>
+
+                        <article class="feature-card">
+                            <div class="feature-eyebrow">Scalability</div>
+                            <h3 class="feature-title">Multiple lower thirds per scene</h3>
+                            <p class="feature-body">
+                                Show several lower thirds at once—host, guest, topic, social tags, and
+                                call-to-action—when you need
+                                more data on screen.
+                            </p>
+                            <ul class="feature-list">
+                                <li>Control each item independently from the dock</li>
+                                <li>Layered multi-lower-third layouts</li>
+                                <li>Ideal for complex productions and e-sports</li>
+                            </ul>
+                        </article>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section" id="server">
+                <div class="section-inner">
+                    <div>
+                        <h2 class="section-title">Built-in local webserver overlay</h2>
+                        <p class="section-subtitle">
+                            Smart Lower Thirds runs a small local webserver that serves your overlay as a persistent
+                            Browser Source,
+                            keeping your graphics in sync across every scene.
+                        </p>
+
+                        <div class="card">
+                            <h3>Persistent Browser Source</h3>
+                            <p>
+                                Once configured, the plugin automatically provides a Browser Source URL you can reuse
+                                across scenes:
+                            </p>
+                            <p>
+                                <code>http://127.0.0.1:8089/smart-lower-thirds.html</code>
+                            </p>
+                            <p>
+                                Add a Browser Source once, then reuse it in all your scenes. When you update a lower
+                                third, the
+                                overlay
+                                updates everywhere—no extra wiring needed.
+                            </p>
+                            <ul class="feature-list">
+                                <li>Works fully offline</li>
+                                <li>No third-party hosting</li>
+                                <li>Perfect for secure or studio environments</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="dock-settings-wrapper">
+                        <div class="card">
+                            <h3>Dock Interface</h3>
+                            <p>
+                                Manage all your lower thirds and plugin settings from the dedicated Smart Lower Thirds
+                                dock inside
+                                OBS Studio.
+                            </p>
+                            <img src="dock.png" alt="Smart Lower Thirds dock screenshot"
+                                style="border-radius: 12px; width: 100%;" />
+                        </div>
+
+                        <div class="card">
+                            <h3>Settings Dialog</h3>
+                            <p>
+                                Fine-tune typography, animations, colors, avatars, and behavior using the fully featured
+                                settings
+                                dialog.
+                            </p>
+                            <img src="settings-dialog.png" alt="Smart Lower Thirds settings dialog screenshot"
+                                style="border-radius: 12px; width: 100%;" />
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <section class="section" id="placeholders">
+                <div class="section-inner split">
+                    <div>
+                        <h2 class="section-title">Powerful placeholder system</h2>
+                        <p class="section-subtitle">
+                            Design your own HTML/CSS templates using simple, readable placeholders that Smart Lower
+                            Thirds replaces at
+                            runtime.
+                        </p>
+
+                        <div class="card">
+                            <h3>Available placeholders</h3>
+                            <p>These can be used in both HTML templates and CSS:</p>
+
+                            <div class="table-wrapper">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Placeholder</th>
+                                            <th>Description</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><code>{{TITLE}}</code></td>
+                                            <td>Main text such as name, topic, or headline</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>{{SUBTITLE}}</code></td>
+                                            <td>Secondary text, role, or description</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>{{PROFILE_PICTURE}}</code></td>
+                                            <td>Avatar image file name / URL</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>{{ID}}</code></td>
+                                            <td>Unique instance ID used for styling & animations</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>{{LT_POSITION}}</code></td>
+                                            <td>Selected position class (bottom-left, top-right, etc.)</td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>{{BG_COLOR}}</code>, <code>{{TEXT_COLOR}}</code></td>
+                                            <td>Dynamic colors injected from the settings dialog</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <p style="margin-top:0.7rem;">
+                                This system makes it easy to share templates, restyle overlays, or integrate Smart Lower
+                                Thirds into
+                                your existing brand.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="card">
+                            <h3>Hotkeys & scene binding</h3>
+                            <p>
+                                Smart Lower Thirds gives you full control over when each lower third appears through
+                                <strong>OBS hotkeys</strong>
+                                and <strong>scene-based automation</strong>.
+                            </p>
+                            <p>
+                                <strong>Hotkey integration:</strong> assign OBS hotkeys per lower third to show, hide,
+                                or toggle
+                                animations. Works great with Stream Decks, macro pads, or any control surface supported
+                                by OBS.
+                            </p>
+                            <p>
+                                <strong>Scene binding:</strong> automatically show a specific lower third when entering
+                                a scene and hide
+                                it when leaving.
+                            </p>
+                            <p>
+                                To keep overlays clean, triggering a lower third via hotkey or scene binding will hide
+                                all other active
+                                lower thirds so the focus stays on the one that is bound.
+                            </p>
+                            <p>
+                                If you want multiple lower thirds visible at the same time (e.g., host + guest + topic),
+                                you can enable
+                                them manually from the dock.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section" id="templates">
+                <div class="section-inner split">
+                    <div>
+                        <h2 class="section-title">Template import & export</h2>
+                        <p class="section-subtitle">
+                            Share your lower thirds, reuse setups between projects, and build your own template library
+                            using minizip
+                            `.zip` bundles.
+                        </p>
+
+                        <div class="card">
+                            <h3>Portable by design</h3>
+                            <p>Each template can contain:</p>
+                            <ul class="feature-list">
+                                <li>HTML layout</li>
+                                <li>CSS styling</li>
+                                <li>Animation configuration</li>
+                                <li>Avatar and color definitions</li>
+                                <li>Font and behavior settings</li>
+                            </ul>
+                            <p style="margin-top:0.6rem;">
+                                Export them, version them with git, share them with your team, or sell them in your
+                                overlay shop.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div id="install">
+                        <h2 class="section-title">Installation</h2>
+                        <p class="section-subtitle">
+                            Installing Smart Lower Thirds is straightforward. Once installed, everything is managed
+                            directly inside
+                            OBS Studio.
+                        </p>
+
+                        <div class="card">
+                            <h3>Quick start</h3>
+                            <ol
+                                style="margin:0; padding-left:1.2rem; font-size:0.85rem; color:var(--muted); line-height:1.5;">
+                                <li>Download the plugin for your platform from the GitHub releases page.</li>
+                                <li>Run the installer or copy the plugin files into your OBS plugins folder.</li>
+                                <li>Restart OBS Studio.</li>
+                                <li>Enable the <strong>Smart Lower Thirds</strong> dock from the <em>Docks</em> menu.
+                                </li>
+                                <li>Add a Browser Source pointing to
+                                    <code>http://127.0.0.1:8089/smart-lower-thirds.html</code>.
+                                </li>
+                                <li>Create your first lower third and trigger it with a hotkey.</li>
+                            </ol>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="section" id="support">
+                <div class="section-inner split">
+                    <div>
+                        <h2 class="section-title">Support & funding</h2>
+                        <p class="section-subtitle">
+                            If Smart Lower Thirds helps your production, you can support ongoing development and unlock
+                            more resources.
+                        </p>
+
+                        <div class="card">
+                            <h3>Support the project</h3>
+                            <p>
+                                Your support helps maintain the plugin, add new features, and build more tools for the
+                                OBS community.
+                            </p>
+                            <p style="margin-bottom:0.6rem;">
+                                🔗 <strong>Lower Thirds Shop:</strong>
+                                <a href="https://ko-fi.com/mmltech/shop" target="_blank" rel="noreferrer">
+                                    ko-fi.com/mmltech/shop
+                                </a>
+                                <br />
+                                ☕ <strong>Ko-fi:</strong>
+                                <a href="https://ko-fi.com/mmltech" target="_blank" rel="noreferrer">
+                                    ko-fi.com/mmltech
+                                </a>
+                                <br />
+                                💸 <strong>PayPal:</strong>
+                                <a href="https://paypal.me/mmlTools" target="_blank" rel="noreferrer">
+                                    paypal.me/mmlTools
+                                </a>
+                            </p>
+                            <p style="font-size:0.8rem; color:var(--muted);">
+                                Even a small tip makes a difference—thank you for supporting open tools for creators.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h2 class="section-title">Credits & libraries</h2>
+                        <p class="section-subtitle">
+                            Smart Lower Thirds is built on top of powerful open-source libraries. Please consider giving
+                            them a star
+                            as well.
+                        </p>
+
+                        <div class="card">
+                            <h3>Bibliography & credits</h3>
+                            <ul class="feature-list">
+                                <li>
+                                    <strong>Animate.css</strong> – smooth, production-ready CSS animations<br />
+                                    🔗
+                                    <a href="https://github.com/animate-css/animate.css" target="_blank"
+                                        rel="noreferrer">
+                                        github.com/animate-css/animate.css
+                                    </a>
+                                </li>
+                                <li>
+                                    <strong>MiniZip</strong> – fast and reliable zip handling used for template
+                                    packaging<br />
+                                    🔗
+                                    <a href="https://github.com/domoticz/minizip" target="_blank" rel="noreferrer">
+                                        github.com/domoticz/minizip
+                                    </a>
+                                </li>
+                            </ul>
+                            <p style="margin-top:0.7rem; font-size:0.8rem; color:var(--muted);">
+                                Special thanks to everyone in the OBS and open-source community contributing tools,
+                                feedback, and
+                                inspiration.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <div class="footer-inner">
+                <div>Created with ❤️ by <strong>MML Tech</strong></div>
+                <div>Perfect for streamers, creators, agencies, and professional broadcasters.</div>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        document.querySelectorAll('a[href^="#"]').forEach(function (anchor) {
+            anchor.addEventListener("click", function (e) {
+                const targetId = this.getAttribute("href").slice(1);
+                if (!targetId) return;
+                const target = document.getElementById(targetId);
+                if (target) {
+                    e.preventDefault();
+                    target.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>

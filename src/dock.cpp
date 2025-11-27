@@ -519,8 +519,7 @@ void LowerThirdDock::rebuildList()
 
 		const QString id = rowUi.id;
 
-		connect(visible, &QCheckBox::toggled, this,
-		        [this, id](bool) { handleToggleVisible(id); });
+		connect(visible, &QCheckBox::toggled, this, [this, id](bool) { handleToggleVisible(id, false); });
 
 		rowFrame->installEventFilter(this);
 		label->installEventFilter(this);
@@ -566,9 +565,9 @@ void LowerThirdDock::updateRowActiveStyles()
 	}
 }
 
-void LowerThirdDock::handleToggleVisible(const QString &id)
+void LowerThirdDock::handleToggleVisible(const QString &id, bool hideOthers)
 {
-	smart_lt::toggle_active(id.toStdString());
+	smart_lt::toggle_active(id.toStdString(), hideOthers);
 	smart_lt::write_index_html();
 	smart_lt::save_state_json();
 	emit requestSave();
