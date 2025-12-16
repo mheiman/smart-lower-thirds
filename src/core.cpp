@@ -1,3 +1,4 @@
+// core.cpp
 #define LOG_TAG "[" PLUGIN_NAME "][core]"
 #include "core.hpp"
 
@@ -5,7 +6,6 @@
 #include <util/platform.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <tuple>
@@ -30,7 +30,10 @@ static std::vector<LowerThirdConfig> g_items;
 static std::string g_output_dir;      // user resources folder
 static std::string g_index_html_path; // absolute
 static std::string g_global_cfg_path; // module config json (stores last output_dir)
-static uint64_t g_rev = 1;            // bumps only on major changes
+
+// IMPORTANT: This rev is now a "STRUCTURAL" rev.
+// It MUST bump only on: add/remove/output-dir-path-change.
+static uint64_t g_rev = 1;
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -177,6 +180,15 @@ static std::string css_from_stored_color(const std::string &stored)
 	return stored; // "#RRGGBB"
 }
 
+// Structural rev bump (ONLY call from: add/remove/output-dir-path-change)
+static void bump_struct_rev()
+{
+	if (g_rev == 0)
+		g_rev = 1;
+	else
+		++g_rev;
+}
+
 // -----------------------------------------------------------------------------
 // Public paths
 // -----------------------------------------------------------------------------
@@ -317,7 +329,7 @@ LowerThirdConfig *get_by_id(const std::string &id)
 }
 
 // -----------------------------------------------------------------------------
-// JSON persistence (rev is authoritative here)
+// JSON persistence (rev is authoritative, but "structural" only)
 // -----------------------------------------------------------------------------
 
 static QJsonObject cfg_to_json(const LowerThirdConfig &cfg)
@@ -558,7 +570,7 @@ void repoint_managed_browser_sources(bool reload)
 }
 
 // -----------------------------------------------------------------------------
-// HTML writer (embeds g_rev as HTML_REV; reload happens when json.rev > HTML_REV)
+// HTML writer (STATIC shell + JS renderer; NEVER forces reload)
 // -----------------------------------------------------------------------------
 
 bool write_index_html()
@@ -591,37 +603,9 @@ bool write_index_html()
 	html += ".lt-pos-top-left{left:5%;top:5%;right:auto;bottom:auto;transform:translate(0,0);}\n";
 	html += ".lt-pos-top-right{right:5%;top:5%;left:auto;bottom:auto;transform:translate(0,0);}\n";
 	html += ".lt-pos-center{top:50%;left:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);}\n";
-
-	for (const auto &cfg : g_items) {
-		std::string css = cfg.css_template;
-		css = replace_all(css, "{{ID}}", cfg.id);
-		css = replace_all(css, "{{FONT_FAMILY}}", cfg.font_family);
-		css = replace_all(css, "{{BG_COLOR}}", css_from_stored_color(cfg.bg_color));
-		css = replace_all(css, "{{TEXT_COLOR}}", css_from_stored_color(cfg.text_color));
-		html += css;
-		html += "\n";
-	}
-
-	html += "</style>\n</head>\n<body>\n<ul id=\"lower-thirds-root\">\n";
-
-	for (const auto &cfg : g_items) {
-		std::string item = cfg.html_template;
-
-		const bool hasAvatar = !cfg.profile_picture.empty();
-		const std::string hasAvatarStr = hasAvatar ? "1" : "0";
-
-		item = replace_all(item, "{{ID}}", cfg.id);
-		item = replace_all(item, "{{TITLE}}", cfg.title);
-		item = replace_all(item, "{{SUBTITLE}}", cfg.subtitle);
-		item = replace_all(item, "{{PROFILE_PICTURE}}", cfg.profile_picture);
-		item = replace_all(item, "{{HAS_AVATAR}}", hasAvatarStr);
-		item = replace_all(item, "{{LT_POSITION}}", cfg.lt_position);
-
-		html += item;
-		html += "\n";
-	}
-
-	html += "</ul>\n";
+	html += "</style>\n";
+	html += "<style id=\"slt-dynamic-style\"></style>\n";
+	html += "</head>\n<body>\n<ul id=\"lower-thirds-root\"></ul>\n";
 
 	// Build list of known animate.css classes to remove
 	std::string jsAllAnims = "  const ALL_ANIMS=[";
@@ -644,25 +628,112 @@ bool write_index_html()
 			append(opt.value);
 	jsAllAnims += "];\n";
 
+	// JS renderer:
+	// - placeholder replacement
+	// - DOM diff for add/remove
+	// - CSS diff (single style tag)
+	// - animations for visibility diff
 	html += "<script>\n(function(){\n";
-	html += "  const HTML_REV=" + std::to_string(g_rev) + ";\n";
-	html += "  const nodes=[...document.querySelectorAll('.lower-third')];\n";
-	html += "  const byId={}; nodes.forEach(li=>{ if(li.id) byId[li.id]=li; });\n";
+	html += "  const HTML_REV=" + std::to_string(g_rev) + ";\n"; // informational; no hard reload logic
+	html += "  const ROOT=document.getElementById('lower-thirds-root');\n";
+	html += "  const STYLE=document.getElementById('slt-dynamic-style');\n";
 	html += jsAllAnims;
-	html += "  nodes.forEach(li=>{ li.style.opacity='0'; li.style.pointerEvents='none'; });\n";
+	html += "  const byId=new Map();\n";
 	html += "  const lastVisible=new Set();\n";
+	html += "  let lastCssSig='';\n";
 	html += "  function clearAnim(li){ ALL_ANIMS.forEach(a=>li.classList.remove(a)); }\n";
 	html += "  function effectiveIn(it){ return (it.anim_in==='custom') ? (it.custom_anim_in||'') : (it.anim_in||''); }\n";
 	html += "  function effectiveOut(it){ return (it.anim_out==='custom') ? (it.custom_anim_out||'') : (it.anim_out||''); }\n";
-	html += "  function applyState(items){\n";
+	html += "  function safeStr(v){ return (v===null||v===undefined) ? '' : String(v); }\n";
+	html += "  function repl(tpl, map){\n";
+	html += "    let s=safeStr(tpl);\n";
+	html += "    for(const k in map){ s=s.split(k).join(map[k]); }\n";
+	html += "    return s;\n";
+	html += "  }\n";
+	html += "  function normColor(c){ return safeStr(c); }\n";
+
+	// Build/Update one item node from template
+	html += "  function renderItem(it){\n";
+	html += "    const id=safeStr(it.id);\n";
+	html += "    if(!id) return;\n";
+	html += "    const hasAvatar = !!safeStr(it.profile_picture);\n";
+	html += "    const map={\n";
+	html += "      '{{ID}}': id,\n";
+	html += "      '{{TITLE}}': safeStr(it.title),\n";
+	html += "      '{{SUBTITLE}}': safeStr(it.subtitle),\n";
+	html += "      '{{PROFILE_PICTURE}}': safeStr(it.profile_picture),\n";
+	html += "      '{{HAS_AVATAR}}': hasAvatar ? '1' : '0',\n";
+	html += "      '{{LT_POSITION}}': safeStr(it.lt_position),\n";
+	html += "      '{{FONT_FAMILY}}': safeStr(it.font_family),\n";
+	html += "      '{{BG_COLOR}}': normColor(it.bg_color),\n";
+	html += "      '{{TEXT_COLOR}}': normColor(it.text_color)\n";
+	html += "    };\n";
+	html += "    const htmlTpl=repl(it.html_template, map);\n";
+	html += "    const sig=htmlTpl + '|' + safeStr(it.lt_position);\n";
+	html += "    const prev=byId.get(id);\n";
+	html += "    if(!prev){\n";
+	html += "      const tmp=document.createElement('div');\n";
+	html += "      tmp.innerHTML=htmlTpl.trim();\n";
+	html += "      const li=tmp.firstElementChild;\n";
+	html += "      if(!li) return;\n";
+	html += "      li.style.opacity='0';\n";
+	html += "      li.style.pointerEvents='none';\n";
+	html += "      ROOT.appendChild(li);\n";
+	html += "      byId.set(id,{li:li,sig:sig});\n";
+	html += "      return;\n";
+	html += "    }\n";
+	html += "    if(prev.sig!==sig){\n";
+	html += "      const old=prev.li;\n";
+	html += "      const tmp=document.createElement('div');\n";
+	html += "      tmp.innerHTML=htmlTpl.trim();\n";
+	html += "      const li=tmp.firstElementChild;\n";
+	html += "      if(!li) return;\n";
+	html += "      li.style.opacity = old.style.opacity || '0';\n";
+	html += "      li.style.pointerEvents = old.style.pointerEvents || 'none';\n";
+	html += "      old.replaceWith(li);\n";
+	html += "      prev.li=li;\n";
+	html += "      prev.sig=sig;\n";
+	html += "    }\n";
+	html += "  }\n";
+
+	// Build CSS once from items (with placeholder replacement)
+	html += "  function buildCss(items){\n";
+	html += "    let css='';\n";
+	html += "    for(const it of items){\n";
+	html += "      const id=safeStr(it.id);\n";
+	html += "      if(!id) continue;\n";
+	html += "      const hasAvatar = !!safeStr(it.profile_picture);\n";
+	html += "      const map={\n";
+	html += "        '{{ID}}': id,\n";
+	html += "        '{{TITLE}}': safeStr(it.title),\n";
+	html += "        '{{SUBTITLE}}': safeStr(it.subtitle),\n";
+	html += "        '{{PROFILE_PICTURE}}': safeStr(it.profile_picture),\n";
+	html += "        '{{HAS_AVATAR}}': hasAvatar ? '1' : '0',\n";
+	html += "        '{{LT_POSITION}}': safeStr(it.lt_position),\n";
+	html += "        '{{FONT_FAMILY}}': safeStr(it.font_family),\n";
+	html += "        '{{BG_COLOR}}': normColor(it.bg_color),\n";
+	html += "        '{{TEXT_COLOR}}': normColor(it.text_color)\n";
+	html += "      };\n";
+	html += "      css += repl(it.css_template, map) + '\\n';\n";
+	html += "    }\n";
+	html += "    return css;\n";
+	html += "  }\n";
+
+	// Visibility animations (same idea as before, but uses current DOM map)
+	html += "  function applyVisibility(items){\n";
 	html += "    const visible=new Set();\n";
 	html += "    const anim={};\n";
-	html += "    for(const it of items){ if(!it||!it.id) continue; anim[it.id]={in:effectiveIn(it), out:effectiveOut(it)}; if(it.visible) visible.add(it.id); }\n";
+	html += "    for(const it of items){\n";
+	html += "      const id=safeStr(it.id); if(!id) continue;\n";
+	html += "      anim[id]={in:effectiveIn(it), out:effectiveOut(it)};\n";
+	html += "      if(!!it.visible) visible.add(id);\n";
+	html += "    }\n";
 	html += "    const toHide=[]; const toShow=[];\n";
 	html += "    lastVisible.forEach(id=>{ if(!visible.has(id)) toHide.push(id); });\n";
 	html += "    visible.forEach(id=>{ if(!lastVisible.has(id)) toShow.push(id); });\n";
 	html += "    for(const id of toHide){\n";
-	html += "      const li=byId[id]; if(!li) continue;\n";
+	html += "      const rec=byId.get(id); if(!rec||!rec.li) continue;\n";
+	html += "      const li=rec.li;\n";
 	html += "      const out=(anim[id]&&anim[id].out) ? anim[id].out : 'animate__fadeOut';\n";
 	html += "      clearAnim(li); li.style.pointerEvents='none'; li.style.opacity='1';\n";
 	html += "      if(out) li.classList.add(out);\n";
@@ -670,21 +741,48 @@ bool write_index_html()
 	html += "      li.addEventListener('animationend', handler);\n";
 	html += "    }\n";
 	html += "    for(const id of toShow){\n";
-	html += "      const li=byId[id]; if(!li) continue;\n";
+	html += "      const rec=byId.get(id); if(!rec||!rec.li) continue;\n";
+	html += "      const li=rec.li;\n";
 	html += "      const inn=(anim[id]&&anim[id].in) ? anim[id].in : 'animate__fadeIn';\n";
 	html += "      clearAnim(li); li.style.opacity='1'; li.style.pointerEvents='auto';\n";
 	html += "      if(inn) li.classList.add(inn);\n";
 	html += "    }\n";
 	html += "    lastVisible.clear(); visible.forEach(id=>lastVisible.add(id));\n";
 	html += "  }\n";
+
+	// Main tick: diff items (add/remove/rebuild), rebuild CSS when needed, apply visibility
+	html += "  function sync(items){\n";
+	html += "    const seen=new Set();\n";
+	html += "    for(const it of items){ const id=safeStr(it.id); if(!id) continue; seen.add(id); renderItem(it); }\n";
+	html += "    // remove nodes not in JSON\n";
+	html += "    for(const [id,rec] of byId.entries()){\n";
+	html += "      if(!seen.has(id)){\n";
+	html += "        if(rec && rec.li) rec.li.remove();\n";
+	html += "        byId.delete(id);\n";
+	html += "        lastVisible.delete(id);\n";
+	html += "      }\n";
+	html += "    }\n";
+	html += "    // css signature\n";
+	html += "    let cssSig='';\n";
+	html += "    for(const it of items){\n";
+	html += "      cssSig += safeStr(it.id)+'|'+safeStr(it.css_template)+'|'+safeStr(it.font_family)+'|'+safeStr(it.bg_color)+'|'+safeStr(it.text_color)+'|'+safeStr(it.profile_picture)+'\\n';\n";
+	html += "    }\n";
+	html += "    if(cssSig!==lastCssSig){\n";
+	html += "      lastCssSig=cssSig;\n";
+	html += "      STYLE.textContent=buildCss(items);\n";
+	html += "    }\n";
+	html += "    applyVisibility(items);\n";
+	html += "  }\n";
+
 	html += "  async function tick(){\n";
 	html += "    try{\n";
 	html += "      const res=await fetch('smart-lower-thirds-state.json?ts='+Date.now(), {cache:'no-store'});\n";
 	html += "      if(!res.ok) return;\n";
 	html += "      const data=await res.json();\n";
-	html += "      const srvRev=Number(data.rev||0);\n";
-	html += "      if(srvRev>HTML_REV){ location.reload(); return; }\n";
-	html += "      applyState(data.items||[]);\n";
+	html += "      // NOTE: we do NOT force reload when rev changes.\n";
+	html += "      // HTML_REV is kept only for debugging/telemetry if you need it later.\n";
+	html += "      const items=(data.items||[]);\n";
+	html += "      sync(items);\n";
 	html += "    }catch(e){}\n";
 	html += "  }\n";
 	html += "  tick(); setInterval(tick, 500);\n";
@@ -712,7 +810,7 @@ bool write_index_html()
 		return false;
 	}
 
-	LOGI("Wrote '%s' (rev=%llu)", htmlPath.toUtf8().constData(), (unsigned long long)g_rev);
+	LOGI("Wrote '%s' (HTML_REV=%llu)", htmlPath.toUtf8().constData(), (unsigned long long)g_rev);
 	return true;
 }
 
@@ -761,31 +859,29 @@ void apply_changes(ApplyMode mode)
 	if (!has_output_dir())
 		return;
 
-	if (mode == ApplyMode::JsonOnly) {
-		save_state_json();
-		return;
-	}
+	// We intentionally do NOT bump g_rev here anymore.
+	// g_rev is structural-only and is managed by add/remove/output-dir-change.
+	(void)mode;
 
-	// Major:
-	// - rev++
-	// - write html with embedded rev
-	// - save json with new rev
-	// - reload managed browser sources
-	g_rev++;
-	write_index_html();
+	// Ensure HTML exists (shell renderer). Do not rewrite constantly.
+	ensure_output_artifacts_exist();
+
+	// Save JSON (this is how the browser updates live).
 	save_state_json();
-	repoint_managed_browser_sources(/*reload*/ true);
 }
 
 // -----------------------------------------------------------------------------
-// CRUD (major)
+// CRUD (STRUCTURAL -> rev bump)
 // -----------------------------------------------------------------------------
 
 std::string add_default_lower_third()
 {
 	LowerThirdConfig cfg = make_default_cfg();
 	g_items.push_back(cfg);
-	apply_changes(ApplyMode::HtmlAndJsonRev);
+
+	bump_struct_rev();
+	apply_changes(ApplyMode::JsonOnly);
+
 	return cfg.id;
 }
 
@@ -797,8 +893,12 @@ std::string clone_lower_third(const std::string &id)
 			copy.id = make_new_id();
 			copy.title += " (Copy)";
 			copy.visible = false;
+
 			g_items.push_back(copy);
-			apply_changes(ApplyMode::HtmlAndJsonRev);
+
+			bump_struct_rev();
+			apply_changes(ApplyMode::JsonOnly);
+
 			return copy.id;
 		}
 	}
@@ -810,12 +910,14 @@ void remove_lower_third(const std::string &id)
 	auto it = std::find_if(g_items.begin(), g_items.end(), [&](const LowerThirdConfig &c) { return c.id == id; });
 	if (it != g_items.end()) {
 		g_items.erase(it);
-		apply_changes(ApplyMode::HtmlAndJsonRev);
+
+		bump_struct_rev();
+		apply_changes(ApplyMode::JsonOnly);
 	}
 }
 
 // -----------------------------------------------------------------------------
-// Visibility (minor)
+// Visibility (minor -> json only)
 // -----------------------------------------------------------------------------
 
 void toggle_active(const std::string &id, bool hideOthers)
@@ -889,7 +991,7 @@ void set_active_exact(const std::string &id)
 }
 
 // -----------------------------------------------------------------------------
-// Output dir switching
+// Output dir switching (STRUCTURAL on path change -> bump rev)
 // -----------------------------------------------------------------------------
 
 bool set_output_dir_and_load(const std::string &dir)
@@ -909,7 +1011,7 @@ bool set_output_dir_and_load(const std::string &dir)
 		return false;
 	}
 
-	// If JSON exists: load it. Otherwise seed defaults (without bumping rev).
+	// If JSON exists: load it. Otherwise seed defaults.
 	const QString jsonPath = QString::fromStdString(state_json_path());
 	if (QFileInfo::exists(jsonPath)) {
 		load_state_json();
@@ -922,6 +1024,12 @@ bool set_output_dir_and_load(const std::string &dir)
 
 	// Ensure HTML exists (do not bump rev)
 	ensure_output_artifacts_exist();
+
+	// If path changed, bump structural rev and save JSON (per your requirement).
+	if (!sameDir) {
+		bump_struct_rev();
+		save_state_json();
+	}
 
 	// Repoint managed sources. Reload only if the dir actually changed.
 	repoint_managed_browser_sources(/*reload*/ !sameDir);
