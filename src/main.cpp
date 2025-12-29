@@ -9,6 +9,18 @@
 OBS_DECLARE_MODULE();
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
+static bool g_deferred_init_done = false;
+
+static void on_frontend_event(enum obs_frontend_event event, void *)
+{
+	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING && !g_deferred_init_done) {
+		g_deferred_init_done = true;
+		LOGI("OBS finished loading, running deferred initialization");
+		smart_lt::rebuild_and_swap();
+		smart_lt::cleanup_old_html_files();
+	}
+}
+
 MODULE_EXPORT const char *obs_module_name(void)
 {
 	return PLUGIN_NAME;
@@ -23,12 +35,14 @@ bool obs_module_load(void)
 {
 	LOGI("Plugin loaded (version %s)", PLUGIN_VERSION);
 	LowerThird_create_dock();
+	obs_frontend_add_event_callback(on_frontend_event, nullptr);
 	return true;
 }
 
 void obs_module_unload(void)
 {
 	LOGI("Unloading plugin %s", PLUGIN_NAME);
+	obs_frontend_remove_event_callback(on_frontend_event, nullptr);
 	LowerThird_destroy_dock();
 	LOGI("Plugin %s unloaded", PLUGIN_NAME);
 }

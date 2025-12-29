@@ -172,7 +172,7 @@ static std::string find_latest_lt_html()
 		return {};
 
 	QDir d(QString::fromStdString(output_dir()));
-	const QStringList list = d.entryList(QStringList() << "lt-*.html", QDir::Files, QDir::Time);
+	const QStringList list = d.entryList(QStringList() << "lt-*.html", QDir::Files, QDir::Time | QDir::Reversed);
 	if (list.isEmpty())
 		return {};
 	return d.filePath(list.first()).toStdString();
@@ -1000,7 +1000,6 @@ bool rebuild_and_swap()
 	ensure_browser_source_in_current_scene();
 	swap_browser_source_to_file(newHtml);
 
-	delete_old_lt_html_keep(newHtml);
 	g_last_html_path = newHtml;
 	return true;
 }
@@ -1033,15 +1032,22 @@ void init_from_disk()
 	if (g_output_dir.empty())
 		return;
 
+	// Just load state for the dock UI. Don't delete or regenerate anything yet.
+	// rebuild_and_swap() will be called from OBS_FRONTEND_EVENT_FINISHED_LOADING
+	// when OBS has finished loading and the browser source is ready.
 	ensure_dir(output_dir());
 	ensure_output_artifacts_exist();
 	load_state_json();
 	load_visible_json();
+}
 
-	g_last_html_path = find_latest_lt_html();
-	if (!g_last_html_path.empty()) {
-		swap_browser_source_to_file(g_last_html_path);
-	}
+void cleanup_old_html_files()
+{
+	if (!has_output_dir() || g_last_html_path.empty())
+		return;
+
+	// Keep the current HTML file, delete all others
+	delete_old_lt_html_keep(g_last_html_path);
 }
 
 // -------------------------

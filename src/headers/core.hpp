@@ -71,6 +71,9 @@ bool set_output_dir_and_load(const std::string &dir);
 // Reads OBS module config: obs_module_config_path("config.json")
 void init_from_disk();
 
+// Called at shutdown to clean up old HTML files
+void cleanup_old_html_files();
+
 // Save OBS module config: obs_module_config_path("config.json")
 bool save_global_config();
 
