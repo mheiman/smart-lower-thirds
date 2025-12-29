@@ -4,7 +4,6 @@
 
 #include "core.hpp"
 #include "settings.hpp"
-#include "widget.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs.h>
@@ -42,8 +41,8 @@ LowerThirdDock::LowerThirdDock(QWidget *parent) : QWidget(parent)
 #LowerThirdDock { background: rgba(39, 42, 51, 1.0); }
 QFrame#sltRowFrame {
   border: 1px solid rgba(255,255,255,40);
-  border-radius: 4px;
-  padding: 4px 6px;
+  border-radius: 3px;
+  padding: 0px 2px;
   background: transparent;
 }
 QFrame#sltRowFrame:hover { background: rgba(255,255,255,0.04); }
@@ -51,9 +50,9 @@ QFrame#sltRowFrame[sltActive="true"] {
   background: rgba(88,166,255,0.16);
   border: 1px solid rgba(88,166,255,0.9);
 }
-QLabel#sltRowLabel { color: #f0f6fc; font-weight: 500; }
-QLabel#sltRowSubLabel { color: rgba(240,246,252,0.72); font-size: 11px; }
-QLabel#sltRowThumbnail { border-radius: 16px; background: rgba(0,0,0,0.35); }
+QLabel#sltRowLabel { color: #f0f6fc; font-weight: 500; font-size: 12px; }
+QLabel#sltRowSubLabel { color: rgba(240,246,252,0.72); font-size: 10px; }
+QLabel#sltRowThumbnail { border-radius: 9px; background: rgba(0,0,0,0.35); }
 QScrollArea#LowerThirdContent QPushButton { border: none; background: transparent; padding: 2px; }
 QScrollArea#LowerThirdContent QPushButton:hover { background: rgba(255,255,255,0.06); border-radius: 3px; }
 )");
@@ -64,21 +63,38 @@ QScrollArea#LowerThirdContent QPushButton:hover { background: rgba(255,255,255,0
 
 	auto *st = style();
 
-	// Top row
+	// List
+	scrollArea = new QScrollArea(this);
+	scrollArea->setObjectName(QStringLiteral("LowerThirdContent"));
+	scrollArea->setWidgetResizable(true);
+
+	listContainer = new QWidget(scrollArea);
+	listLayout = new QVBoxLayout(listContainer);
+	listLayout->setContentsMargins(2, 2, 2, 2);
+	listLayout->setSpacing(2);
+	listLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+
+	scrollArea->setWidget(listContainer);
+	rootLayout->addWidget(scrollArea, 1);
+
+	// Lower Row
 	{
 		auto *row = new QHBoxLayout();
-		row->setSpacing(6);
-
-		auto *lbl = new QLabel(tr("Resources:"), this);
+		row->setSpacing(3);
+		row->setContentsMargins(0, 0, 0, 0);
 
 		outputPathEdit = new QLineEdit(this);
 		outputPathEdit->setReadOnly(true);
+		outputPathEdit->setMaximumHeight(20);
+		outputPathEdit->setStyleSheet("QLineEdit { padding: 1px 3px; font-size: 11px; }");
 
 		outputBrowseBtn = new QPushButton(this);
 		outputBrowseBtn->setCursor(Qt::PointingHandCursor);
 		outputBrowseBtn->setToolTip(tr("Select output folder"));
 		outputBrowseBtn->setFlat(true);
 		outputBrowseBtn->setIcon(st->standardIcon(QStyle::SP_DirOpenIcon));
+		outputBrowseBtn->setIconSize(QSize(14, 14));
+		outputBrowseBtn->setFixedHeight(20);
 
 		ensureSourceBtn = new QPushButton(this);
 		ensureSourceBtn->setCursor(Qt::PointingHandCursor);
@@ -89,37 +105,8 @@ QScrollArea#LowerThirdContent QPushButton:hover { background: rgba(255,255,255,0
 		if (globe.isNull())
 			globe = st->standardIcon(QStyle::SP_BrowserReload);
 		ensureSourceBtn->setIcon(globe);
-
-		row->addWidget(lbl);
-		row->addWidget(outputPathEdit, 1);
-		row->addWidget(outputBrowseBtn);
-		row->addWidget(ensureSourceBtn);
-
-		rootLayout->addLayout(row);
-
-		connect(outputBrowseBtn, &QPushButton::clicked, this, &LowerThirdDock::onBrowseOutputFolder);
-		connect(ensureSourceBtn, &QPushButton::clicked, this, &LowerThirdDock::onEnsureBrowserSourceClicked);
-	}
-
-	// List
-	scrollArea = new QScrollArea(this);
-	scrollArea->setObjectName(QStringLiteral("LowerThirdContent"));
-	scrollArea->setWidgetResizable(true);
-
-	listContainer = new QWidget(scrollArea);
-	listLayout = new QVBoxLayout(listContainer);
-	listLayout->setContentsMargins(8, 8, 8, 8);
-	listLayout->setSpacing(6);
-	listLayout->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-
-	scrollArea->setWidget(listContainer);
-	rootLayout->addWidget(scrollArea, 1);
-
-	// Add button
-	{
-		auto *row = new QHBoxLayout();
-		row->setSpacing(6);
-		row->addStretch(1);
+		ensureSourceBtn->setIconSize(QSize(14, 14));
+		ensureSourceBtn->setFixedHeight(20);
 
 		addBtn = new QPushButton(this);
 		addBtn->setCursor(Qt::PointingHandCursor);
@@ -130,15 +117,19 @@ QScrollArea#LowerThirdContent QPushButton:hover { background: rgba(255,255,255,0
 		if (plus.isNull())
 			plus = st->standardIcon(QStyle::SP_DialogYesButton);
 		addBtn->setIcon(plus);
+		addBtn->setIconSize(QSize(14, 14));
+		addBtn->setFixedHeight(20);
 
+		row->addWidget(outputBrowseBtn);
+		row->addWidget(outputPathEdit, 1);
+		row->addWidget(ensureSourceBtn);
 		row->addWidget(addBtn);
 		rootLayout->addLayout(row);
 
+		connect(outputBrowseBtn, &QPushButton::clicked, this, &LowerThirdDock::onBrowseOutputFolder);
+		connect(ensureSourceBtn, &QPushButton::clicked, this, &LowerThirdDock::onEnsureBrowserSourceClicked);
 		connect(addBtn, &QPushButton::clicked, this, &LowerThirdDock::onAddLowerThird);
 	}
-
-	// Footer
-	rootLayout->addWidget(create_widget_carousel(this));
 
 	const bool hasDir = smart_lt::has_output_dir();
 	addBtn->setEnabled(hasDir);
@@ -336,8 +327,8 @@ void LowerThirdDock::rebuildList()
 		rowFrame->setCursor(Qt::PointingHandCursor);
 
 		auto *h = new QHBoxLayout(rowFrame);
-		h->setContentsMargins(8, 4, 8, 4);
-		h->setSpacing(6);
+		h->setContentsMargins(4, 1, 4, 1);
+		h->setSpacing(3);
 
 		auto *visible = new QCheckBox(rowFrame);
 		visible->setChecked(smart_lt::is_visible(cfg.id));
@@ -349,7 +340,7 @@ void LowerThirdDock::rebuildList()
 
 		auto *thumb = new QLabel(rowFrame);
 		thumb->setObjectName(QStringLiteral("sltRowThumbnail"));
-		thumb->setFixedSize(32, 32);
+		thumb->setFixedSize(18, 18);
 		thumb->setScaledContents(true);
 
 		bool hasThumb = false;
@@ -358,7 +349,7 @@ void LowerThirdDock::rebuildList()
 			QPixmap px(imgPath);
 			if (!px.isNull()) {
 				thumb->setPixmap(
-					px.scaled(32, 32, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
+					px.scaled(18, 18, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation));
 				hasThumb = true;
 			}
 		}
@@ -413,9 +404,9 @@ void LowerThirdDock::rebuildList()
 		removeBtn->setToolTip(tr("Remove lower third"));
 		removeBtn->setFlat(true);
 
-		cloneBtn->setIconSize(QSize(16, 16));
-		settingsBtn->setIconSize(QSize(16, 16));
-		removeBtn->setIconSize(QSize(16, 16));
+		cloneBtn->setIconSize(QSize(14, 14));
+		settingsBtn->setIconSize(QSize(14, 14));
+		removeBtn->setIconSize(QSize(14, 14));
 
 		h->addWidget(cloneBtn);
 		h->addWidget(settingsBtn);
