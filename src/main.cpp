@@ -1,6 +1,7 @@
 #define LOG_TAG "[" PLUGIN_NAME "][main]"
 #include "core.hpp"
 #include "dock.hpp"
+#include "websocket_bridge.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -34,15 +35,27 @@ MODULE_EXPORT const char *obs_module_description(void)
 bool obs_module_load(void)
 {
 	LOGI("Plugin loaded (version %s)", PLUGIN_VERSION);
+
+	smart_lt::init_from_disk();
 	LowerThird_create_dock();
 	obs_frontend_add_event_callback(on_frontend_event, nullptr);
 	return true;
 }
 
+void obs_module_post_load(void)
+{
+	smart_lt::ws::init();
+}
+
 void obs_module_unload(void)
 {
 	LOGI("Unloading plugin %s", PLUGIN_NAME);
+
 	obs_frontend_remove_event_callback(on_frontend_event, nullptr);
+
+	smart_lt::ws::shutdown();
+
 	LowerThird_destroy_dock();
+
 	LOGI("Plugin %s unloaded", PLUGIN_NAME);
 }
