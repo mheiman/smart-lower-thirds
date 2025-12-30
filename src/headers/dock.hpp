@@ -1,6 +1,8 @@
 // dock.hpp
 #pragma once
 
+#include <cstdint>
+
 #include <QWidget>
 #include <QVector>
 #include <QHash>
@@ -16,6 +18,11 @@ class QCheckBox;
 class QShortcut;
 class QEvent;
 class QTimer;
+class QComboBox;
+
+namespace smart_lt {
+struct core_event; // provided by core (event bus)
+}
 
 namespace smart_lt::ui {
 
@@ -35,14 +42,16 @@ class LowerThirdDock : public QWidget {
 	Q_OBJECT
 public:
 	explicit LowerThirdDock(QWidget *parent = nullptr);
+	~LowerThirdDock() override;
+
 	bool init();
+	void refreshBrowserSources();
 
 signals:
 	void requestSave();
 
 private slots:
 	void onBrowseOutputFolder();
-	void onEnsureBrowserSourceClicked();
 	void onAddLowerThird();
 
 private:
@@ -64,13 +73,27 @@ private:
 	void ensureRepeatTimerStarted();
 	void repeatTick();
 
+	// NEW: combo-box workflow
+	void populateBrowserSources(bool keepSelection = true);
+	void onBrowserSourceChanged(int index);
+
+	// NEW: core event bus sync (bidirectional with websocket)
+	void onCoreEvent(const smart_lt::core_event &ev);
+	static void coreEventThunk(const smart_lt::core_event &ev, void *user);
+
 protected:
 	bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+	// Resources row
 	QLineEdit *outputPathEdit = nullptr;
 	QPushButton *outputBrowseBtn = nullptr;
-	QPushButton *ensureSourceBtn = nullptr;
+
+	// Browser Source selector row
+	QComboBox *browserSourceCombo = nullptr;
+	QPushButton *refreshSourcesBtn = nullptr;
+
+	// Add
 	QPushButton *addBtn = nullptr;
 
 	QScrollArea *scrollArea = nullptr;
@@ -83,11 +106,17 @@ private:
 	QTimer *repeatTimer_ = nullptr;
 	QHash<QString, qint64> nextOnMs_;
 	QHash<QString, qint64> offAtMs_;
-	qint64 lastVisibleMtimeMs_ = 0;
+
+	// Helps avoid recursive signals while repopulating
+	bool populatingSources_ = false;
+
+	// Core event bus listener token
+	uint64_t coreListenerToken_ = 0;
 };
 
 } // namespace smart_lt::ui
 
 void LowerThird_create_dock();
 void LowerThird_destroy_dock();
+
 smart_lt::ui::LowerThirdDock *LowerThird_get_dock();

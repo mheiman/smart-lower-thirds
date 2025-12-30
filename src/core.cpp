@@ -6,6 +6,7 @@
 #include <sstream>
 #include <random>
 #include <cctype>
+#include <mutex>
 
 #include <QDir>
 #include <QFile>
@@ -15,14 +16,68 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
-#include <obs-frontend-api.h>
+#include <obs.h>
+#include <obs-module.h>
 
 namespace smart_lt {
 
+// -------------------------
+// Globals
+// -------------------------
 static std::string g_output_dir;
+static std::string g_target_browser_source;
 static std::vector<lower_third_cfg> g_items;
 static std::vector<std::string> g_visible;
 static std::string g_last_html_path;
+
+// -------------------------
+// Event bus impl
+// -------------------------
+struct listener {
+	uint64_t token = 0;
+	core_event_cb cb = nullptr;
+	void *user = nullptr;
+};
+
+static std::mutex g_evt_mx;
+static std::vector<listener> g_listeners;
+static uint64_t g_next_token = 1;
+
+static void emit_event(const core_event &ev)
+{
+	std::vector<listener> copy;
+	{
+		std::lock_guard<std::mutex> lk(g_evt_mx);
+		copy = g_listeners;
+	}
+	for (const auto &l : copy) {
+		if (l.cb)
+			l.cb(ev, l.user);
+	}
+}
+
+uint64_t add_event_listener(core_event_cb cb, void *user)
+{
+	if (!cb)
+		return 0;
+
+	std::lock_guard<std::mutex> lk(g_evt_mx);
+	const uint64_t t = g_next_token++;
+	g_listeners.push_back(listener{t, cb, user});
+	return t;
+}
+
+void remove_event_listener(uint64_t token)
+{
+	if (token == 0)
+		return;
+
+	std::lock_guard<std::mutex> lk(g_evt_mx);
+	g_listeners.erase(
+		std::remove_if(g_listeners.begin(), g_listeners.end(),
+			       [&](const listener &l) { return l.token == token; }),
+		g_listeners.end());
+}
 
 // -------------------------
 // Helpers
@@ -108,7 +163,7 @@ static bool file_exists(const std::string &path)
 }
 
 // -------------------------
-// OBS module config.json (output_dir)
+// OBS module config.json
 // -------------------------
 static std::string module_config_path_cached()
 {
@@ -147,10 +202,17 @@ static void load_global_config()
 		return;
 
 	const QJsonObject root = doc.object();
+
 	const QString out = root.value("output_dir").toString().trimmed();
 	if (!out.isEmpty()) {
 		g_output_dir = out.toStdString();
 		LOGI("Loaded output_dir: '%s'", g_output_dir.c_str());
+	}
+
+	const QString tgt = root.value("target_browser_source").toString().trimmed();
+	if (!tgt.isEmpty()) {
+		g_target_browser_source = tgt.toStdString();
+		LOGI("Loaded target_browser_source: '%s'", g_target_browser_source.c_str());
 	}
 }
 
@@ -165,12 +227,12 @@ bool save_global_config()
 
 	QJsonObject root;
 	root["output_dir"] = QString::fromStdString(g_output_dir);
+	root["target_browser_source"] = QString::fromStdString(g_target_browser_source);
 
 	const QJsonDocument doc(root);
 	return write_text_file(pathS, doc.toJson(QJsonDocument::Compact).toStdString());
 }
 
-// Find latest lt-*.html so we can repoint browser on startup without rebuilding.
 static std::string find_latest_lt_html()
 {
 	if (!has_output_dir())
@@ -204,6 +266,8 @@ static lower_third_cfg default_cfg()
 
 	c.bg_color = "#111827";
 	c.text_color = "#F9FAFB";
+	c.opacity = 85;
+	c.radius = 5;
 
 	c.html_template =
 		R"HTML(
@@ -223,7 +287,7 @@ static lower_third_cfg default_cfg()
 .slt-card {
   display: flex; align-items: center; gap: 12px;
   padding: 14px 18px;
-  border-radius: 14px;
+  border-radius: {{RADIUS}}%;
   background: {{BG_COLOR}};
   color: {{TEXT_COLOR}};
   box-shadow: 0 10px 30px rgba(0,0,0,0.35);
@@ -236,7 +300,6 @@ static lower_third_cfg default_cfg()
   flex-shrink: 0;
 }
 
-/* Hide the image if the source is empty or the placeholder ./ */
 .slt-avatar:not([src]),
 .slt-avatar[src=""],
 .slt-avatar[src="./"] {
@@ -300,6 +363,8 @@ static std::string scope_css_best_effort(const lower_third_cfg &c)
 
 	css = replace_all(css, "{{ID}}", c.id);
 	css = replace_all(css, "{{BG_COLOR}}", c.bg_color);
+	css = replace_all(css, "{{OPACITY}}", std::to_string(c.opacity));
+	css = replace_all(css, "{{RADIUS}}", std::to_string(c.radius));
 	css = replace_all(css, "{{TEXT_COLOR}}", c.text_color);
 	css = replace_all(css, "{{FONT_FAMILY}}", c.font_family.empty() ? "Inter" : c.font_family);
 
@@ -362,15 +427,21 @@ static std::string build_base_script(const std::vector<lower_third_cfg> &items)
 	map += "  };\n";
 
 	return std::string(R"JS(
-/* Smart Lower Thirds – Animation Script */
+/* Smart Lower Thirds – Animation Script (lifecycle + race-safe) */
 (() => {
   const VISIBLE_URL = "./lt-visible.json";
   const animMap = )JS") +
 	       map + R"JS(
 
+  // Safety bounds (avoid deadlocks)
+  const MAX_HOOK_WAIT_MS = 1200;
+  const MAX_ANIM_WAIT_MS = 1600;
+
   function stripAnimate(el) {
     el.classList.remove("animate__animated");
     el.style.animationDelay = "";
+    el.style.animationDuration = "";
+    el.style.animationTimingFunction = "";
     [...el.classList].forEach(c => {
       if (c.startsWith("animate__")) el.classList.remove(c);
     });
@@ -380,12 +451,87 @@ static std::string build_base_script(const std::vector<lower_third_cfg> &items)
     return cls && String(cls).trim().length > 0;
   }
 
-  function applyIn(el, cfg) {
-    if (el.dataset.state === "showing" || el.dataset.state === "visible") return;
+  function getHook(el, name) {
+    const fn = el && el[name];
+    return (typeof fn === "function") ? fn : null;
+  }
+
+  function markWant(el, shouldShow) {
+    el.dataset.want = shouldShow ? "1" : "0";
+  }
+
+  function wantsShow(el) { return el.dataset.want === "1"; }
+  function wantsHide(el) { return el.dataset.want === "0"; }
+
+  function nextOp(el) {
+    el.__slt_op = (el.__slt_op || 0) + 1;
+    return el.__slt_op;
+  }
+
+  function ensureCurrent(el, op) {
+    if ((el.__slt_op || 0) !== op) throw new Error("superseded");
+  }
+
+  async function runHook(el, name, op) {
+    const fn = getHook(el, name);
+    if (!fn) return;
+
+    try {
+      const r = fn();
+      if (r && typeof r.then === "function") {
+        await Promise.race([
+          r,
+          new Promise(res => setTimeout(res, MAX_HOOK_WAIT_MS))
+        ]);
+      }
+    } catch (e) {}
+
+    ensureCurrent(el, op);
+  }
+
+  function waitForOwnAnimationEnd(el, op) {
+    return new Promise(resolve => {
+      let done = false;
+
+      const cleanup = () => {
+        if (done) return;
+        done = true;
+        el.removeEventListener("animationend", onEnd, true);
+      };
+
+      const onEnd = (ev) => {
+        // Only end when the <li> itself ends its animation (ignore child animation events)
+        if (ev.target !== el) return;
+        cleanup();
+        resolve(true);
+      };
+
+      // Capture = true so we still receive it even if user scripts stop propagation
+      el.addEventListener("animationend", onEnd, true);
+
+      // Failsafe (e.g., missing animate.css or browser quirks)
+      setTimeout(() => {
+        if (!done) {
+          cleanup();
+          resolve(true);
+        }
+      }, MAX_ANIM_WAIT_MS);
+    }).then(() => {
+      ensureCurrent(el, op);
+      return true;
+    });
+  }
+
+  async function applyIn(el, cfg) {
+    const op = nextOp(el);
+
+    // If intent changed already, abort.
+    if (!wantsShow(el)) return;
 
     el.dataset.state = "showing";
-    stripAnimate(el);
 
+    // Cancel any in-flight out animation visually and force displayed
+    stripAnimate(el);
     el.classList.remove("slt-hidden");
     el.classList.add("slt-visible");
 
@@ -395,33 +541,59 @@ static std::string build_base_script(const std::vector<lower_third_cfg> &items)
       el.classList.add("animate__animated");
       cfg.inCls.split(/\s+/).forEach(c => el.classList.add(c));
 
-      el.onanimationend = () => {
-        el.dataset.state = "visible";
-        el.style.animationDelay = "";
-        el.onanimationend = null;
-      };
+      await waitForOwnAnimationEnd(el, op);
+
+      // Might have been superseded or intent flipped
+      if (!wantsShow(el)) return;
+
+      el.dataset.state = "visible";
+      el.style.animationDelay = "";
     } else {
       el.dataset.state = "visible";
     }
+
+    // Lifecycle: after shown (template may run inner sequencing)
+    await runHook(el, "__slt_onShown", op);
+
+    // Final sanity: don't force visible if user toggled hide during hook
+    if (!wantsShow(el)) return;
+
+    el.dataset.state = "visible";
+    el.classList.remove("slt-hidden");
+    el.classList.add("slt-visible");
   }
 
-  function applyOut(el, cfg) {
-    if (el.dataset.state === "hiding" || el.dataset.state === "hidden") return;
+  async function applyOut(el, cfg) {
+    const op = nextOp(el);
+
+    // If intent changed already, abort.
+    if (!wantsHide(el)) return;
+
+    // Lifecycle: template can animate inner exit BEFORE parent out anim
+    el.dataset.state = "hiding_pending";
+    await runHook(el, "__slt_beforeHide", op);
+
+    // If user toggled back to show while we waited, abort hide.
+    if (!wantsHide(el)) return;
 
     el.dataset.state = "hiding";
+
+    // Ensure we start parent out cleanly (remove any in classes)
     stripAnimate(el);
 
     if (hasAnim(cfg.outCls)) {
       el.classList.add("animate__animated");
       cfg.outCls.split(/\s+/).forEach(c => el.classList.add(c));
 
-      el.onanimationend = () => {
-        stripAnimate(el);
-        el.classList.remove("slt-visible");
-        el.classList.add("slt-hidden");
-        el.dataset.state = "hidden";
-        el.onanimationend = null;
-      };
+      await waitForOwnAnimationEnd(el, op);
+
+      // If user toggled show during parent out, abort final hide.
+      if (!wantsHide(el)) return;
+
+      stripAnimate(el);
+      el.classList.remove("slt-visible");
+      el.classList.add("slt-hidden");
+      el.dataset.state = "hidden";
     } else {
       el.classList.remove("slt-visible");
       el.classList.add("slt-hidden");
@@ -436,23 +608,29 @@ static std::string build_base_script(const std::vector<lower_third_cfg> &items)
       if (!Array.isArray(visibleIds)) return;
 
       const visibleSet = new Set(visibleIds.map(String));
+      const els = Array.from(document.querySelectorAll("#slt-root > li[id]"));
 
-      document.querySelectorAll("#slt-root > li[id]").forEach(el => {
-        const id = el.id;
-        const cfg = animMap[id] || {};
-        const shouldShow = visibleSet.has(id);
-        const state = el.dataset.state;
+      // Pass 1: update intent for all elements (prevents per-element races)
+      for (const el of els) {
+        markWant(el, visibleSet.has(el.id));
+      }
+
+      // Pass 2: drive state machine (fire-and-forget; op token makes it safe)
+      for (const el of els) {
+        const cfg = animMap[el.id] || {};
+        const shouldShow = wantsShow(el);
+        const state = el.dataset.state || "hidden";
 
         if (shouldShow) {
           if (state !== "visible" && state !== "showing") {
             applyIn(el, cfg);
           }
         } else {
-          if (state !== "hidden" && state !== "hiding") {
+          if (state !== "hidden" && state !== "hiding" && state !== "hiding_pending") {
             applyOut(el, cfg);
           }
         }
-      });
+      }
     } catch (e) {}
   }
 
@@ -487,6 +665,7 @@ static std::string build_full_html()
 	html += "<!doctype html>\n<html>\n<head>\n<meta charset=\"utf-8\"/>\n";
 	html += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n";
 	html += "<link rel=\"stylesheet\" href=\"./lt-styles.css\"/>\n";
+
 	const std::string animateLocalAbs = path_animate_css();
 	if (!animateLocalAbs.empty() && file_exists(animateLocalAbs)) {
 		LOGI("Using local animate.min.css");
@@ -495,6 +674,7 @@ static std::string build_full_html()
 		LOGI("Using CDN animate.css (local animate.min.css not found)");
 		html += "<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css\"/>\n";
 	}
+
 	html += "</head>\n<body>\n<ul id=\"slt-root\">\n";
 
 	for (const auto &c : g_items) {
@@ -503,6 +683,8 @@ static std::string build_full_html()
 		inner = replace_all(inner, "{{TITLE}}", c.title);
 		inner = replace_all(inner, "{{SUBTITLE}}", c.subtitle);
 		inner = replace_all(inner, "{{BG_COLOR}}", c.bg_color);
+		inner = replace_all(inner, "{{OPACITY}}", std::to_string(c.opacity));
+		inner = replace_all(inner, "{{RADIUS}}", std::to_string(c.radius));
 		inner = replace_all(inner, "{{TEXT_COLOR}}", c.text_color);
 		inner = replace_all(inner, "{{FONT_FAMILY}}", c.font_family.empty() ? "Inter" : c.font_family);
 
@@ -521,7 +703,6 @@ static std::string build_full_html()
 	html += "</ul>\n<script src=\"./lt-scripts.js\"></script>\n</body>\n</html>\n";
 	return html;
 }
-
 // -------------------------
 // Public
 // -------------------------
@@ -606,7 +787,10 @@ bool is_visible(const std::string &id)
 	return std::find(g_visible.begin(), g_visible.end(), id) != g_visible.end();
 }
 
-void set_visible(const std::string &id, bool visible)
+// -------------------------
+// Visible set (NOSAVE / NOEVENT)
+// -------------------------
+void set_visible_nosave(const std::string &id, bool visible)
 {
 	if (id.empty())
 		return;
@@ -619,11 +803,57 @@ void set_visible(const std::string &id, bool visible)
 	}
 }
 
-void toggle_visible(const std::string &id)
+void toggle_visible_nosave(const std::string &id)
 {
-	set_visible(id, !is_visible(id));
+	set_visible_nosave(id, !is_visible(id));
 }
 
+// -------------------------
+// Visible set (PERSIST + NOTIFY)
+// -------------------------
+bool set_visible_persist(const std::string &id, bool visible)
+{
+	if (!has_output_dir() || id.empty())
+		return false;
+
+	// keep in sync with existing items only
+	if (!get_by_id(id))
+		return false;
+
+	const bool before = is_visible(id);
+	if (before == visible) {
+		return true; // no-op
+	}
+
+	set_visible_nosave(id, visible);
+	if (!save_visible_json())
+		return false;
+
+	core_event ev;
+	ev.type = event_type::VisibilityChanged;
+	ev.id = id;
+	ev.visible = visible;
+	ev.visible_ids = visible_ids();
+	emit_event(ev);
+
+	return true;
+}
+
+bool toggle_visible_persist(const std::string &id)
+{
+	if (!has_output_dir() || id.empty())
+		return false;
+
+	if (!get_by_id(id))
+		return false;
+
+	const bool after = !is_visible(id);
+	return set_visible_persist(id, after);
+}
+
+// -------------------------
+// Artifacts files
+// -------------------------
 bool ensure_output_artifacts_exist()
 {
 	if (!has_output_dir())
@@ -704,6 +934,13 @@ bool load_state_json()
 
 		c.bg_color = o.value("bg_color").toString().toStdString();
 		c.text_color = o.value("text_color").toString().toStdString();
+		c.opacity = o.value("opacity").toInt(0);
+		c.radius = o.value("radius").toInt(0);
+
+		if(c.opacity < 0 || c.opacity > 100)
+			c.opacity = 85;
+		if(c.radius < 0 || c.radius > 100)
+			c.radius = 5;
 
 		c.html_template = o.value("html_template").toString().toStdString();
 		c.css_template = o.value("css_template").toString().toStdString();
@@ -772,6 +1009,8 @@ bool save_state_json()
 
 		o["bg_color"] = QString::fromStdString(c.bg_color);
 		o["text_color"] = QString::fromStdString(c.text_color);
+		o["opacity"] = c.opacity;
+		o["radius"] = c.radius;
 
 		o["html_template"] = QString::fromStdString(c.html_template);
 		o["css_template"] = QString::fromStdString(c.css_template);
@@ -906,21 +1145,94 @@ std::string generate_timestamp_html()
 }
 
 // -------------------------
-// Browser source helpers
+// Browser source helpers (combo-box workflow)
 // -------------------------
-static obs_source_t *get_browser_by_name()
+
+static obs_source_t *get_target_browser_source()
 {
-	return obs_get_source_by_name(sltBrowserSourceName);
+	if (g_target_browser_source.empty())
+		return nullptr;
+
+	// Returns with refcount +1
+	return obs_get_source_by_name(g_target_browser_source.c_str());
 }
 
-bool swap_browser_source_to_file(const std::string &absoluteHtmlPath)
+std::vector<std::string> list_browser_source_names()
+{
+	std::vector<std::string> out;
+
+	auto enum_cb = [](void *param, obs_source_t *src) -> bool {
+		if (!src)
+			return true;
+
+		const char *id = obs_source_get_id(src);
+		if (!id)
+			return true;
+
+		if (std::string(id) != sltBrowserSourceId)
+			return true;
+
+		const char *name = obs_source_get_name(src);
+		if (name && *name) {
+			auto *vec = static_cast<std::vector<std::string> *>(param);
+			vec->push_back(std::string(name));
+		}
+		return true;
+	};
+
+	obs_enum_sources(enum_cb, &out);
+
+	std::sort(out.begin(), out.end());
+	out.erase(std::unique(out.begin(), out.end()), out.end());
+	return out;
+}
+
+std::string target_browser_source_name()
+{
+	return g_target_browser_source;
+}
+
+bool set_target_browser_source_name(const std::string &name)
+{
+	g_target_browser_source = name;
+	return save_global_config();
+}
+
+bool target_browser_source_exists()
+{
+	obs_source_t *src = get_target_browser_source();
+	if (!src)
+		return false;
+
+	// Defensive: ensure the selection is still a Browser Source
+	const char *id = obs_source_get_id(src);
+	const bool ok = (id && std::string(id) == sltBrowserSourceId);
+
+	obs_source_release(src);
+	return ok;
+}
+
+bool swap_target_browser_source_to_file(const std::string &absoluteHtmlPath)
 {
 	if (absoluteHtmlPath.empty())
 		return false;
 
-	obs_source_t *src = get_browser_by_name();
-	if (!src)
+	obs_source_t *src = get_target_browser_source();
+	if (!src) {
+		if (g_target_browser_source.empty())
+			LOGW("No target Browser Source selected.");
+		else
+			LOGW("Target Browser Source '%s' not found.", g_target_browser_source.c_str());
 		return false;
+	}
+
+	// Defensive: ensure it's still a browser source
+	const char *id = obs_source_get_id(src);
+	if (!id || std::string(id) != sltBrowserSourceId) {
+		LOGW("Target source '%s' is not a Browser Source.", g_target_browser_source.c_str());
+		obs_source_release(src);
+		return false;
+	}
 
 	obs_data_t *s = obs_source_get_settings(src);
 	obs_data_set_bool(s, "is_local_file", true);
@@ -933,68 +1245,6 @@ bool swap_browser_source_to_file(const std::string &absoluteHtmlPath)
 	return true;
 }
 
-bool ensure_browser_source_in_current_scene()
-{
-	if (!has_output_dir())
-		return false;
-
-	if (obs_source_t *existing = get_browser_by_name()) {
-		obs_source_release(existing);
-		return true;
-	}
-
-	obs_source_t *curSceneSrc = obs_frontend_get_current_scene();
-	if (!curSceneSrc) {
-		LOGW("No current scene");
-		return false;
-	}
-
-	obs_scene_t *scene = obs_scene_from_source(curSceneSrc);
-	if (!scene) {
-		obs_source_release(curSceneSrc);
-		return false;
-	}
-
-	if (g_last_html_path.empty()) {
-		regenerate_merged_css_js();
-		g_last_html_path = generate_timestamp_html();
-	}
-	if (g_last_html_path.empty()) {
-		obs_source_release(curSceneSrc);
-		return false;
-	}
-
-	obs_data_t *settings = obs_data_create();
-	obs_data_set_bool(settings, "is_local_file", true);
-	obs_data_set_string(settings, "local_file", g_last_html_path.c_str());
-	obs_data_set_bool(settings, "smart_lt_managed", true);
-
-	obs_video_info vi{};
-	if (obs_get_video_info(&vi) == 0) {
-		obs_data_set_int(settings, "width", vi.base_width);
-		obs_data_set_int(settings, "height", vi.base_height);
-	} else {
-		obs_data_set_int(settings, "width", sltBrowserWidth);
-		obs_data_set_int(settings, "height", sltBrowserHeight);
-	}
-
-	obs_data_set_bool(settings, "shutdown", false);
-
-	obs_source_t *browser = obs_source_create(sltBrowserSourceId, sltBrowserSourceName, settings, nullptr);
-	obs_data_release(settings);
-
-	if (!browser) {
-		obs_source_release(curSceneSrc);
-		return false;
-	}
-
-	obs_scene_add(scene, browser);
-
-	obs_source_release(browser);
-	obs_source_release(curSceneSrc);
-	return true;
-}
-
 // -------------------------
 // High-level triggers
 // -------------------------
@@ -1004,8 +1254,6 @@ bool rebuild_and_swap()
 		return false;
 
 	ensure_output_artifacts_exist();
-	load_state_json();
-	load_visible_json();
 
 	if (!regenerate_merged_css_js())
 		return false;
@@ -1014,12 +1262,49 @@ bool rebuild_and_swap()
 	if (newHtml.empty())
 		return false;
 
-	ensure_browser_source_in_current_scene();
-	swap_browser_source_to_file(newHtml);
+	if (target_browser_source_exists()) {
+		swap_target_browser_source_to_file(newHtml);
+	} else {
+		if (g_target_browser_source.empty()) {
+			LOGW("Rebuilt artifacts but did not swap: no target Browser Source selected.");
+		} else {
+			LOGW("Rebuilt artifacts but did not swap: target Browser Source '%s' missing or not a Browser Source.",
+			     g_target_browser_source.c_str());
+		}
+	}
 
 	delete_old_lt_html_keep(newHtml);
 	g_last_html_path = newHtml;
 	return true;
+}
+
+// Force reload state+visible from disk and rebuild/swap (with notifications)
+bool reload_from_disk_and_rebuild()
+{
+	if (!has_output_dir())
+		return false;
+
+	ensure_output_artifacts_exist();
+
+	const bool okState = load_state_json();
+	const bool okVis   = load_visible_json();
+	const bool okReb   = rebuild_and_swap();
+	const bool ok      = okState && okVis && okReb;
+
+	// Emit Reloaded + ListChanged(reason=Reload)
+	core_event r;
+	r.type = event_type::Reloaded;
+	r.ok = ok;
+	r.count = (int64_t)g_items.size();
+	emit_event(r);
+
+	core_event l;
+	l.type = event_type::ListChanged;
+	l.reason = list_change_reason::Reload;
+	l.count = (int64_t)g_items.size();
+	emit_event(l);
+
+	return ok;
 }
 
 bool set_output_dir_and_load(const std::string &dir)
@@ -1039,8 +1324,16 @@ bool set_output_dir_and_load(const std::string &dir)
 	save_state_json();
 	save_visible_json();
 
-	rebuild_and_swap();
-	return true;
+	const bool ok = rebuild_and_swap();
+
+	// Treat as reload for listeners
+	core_event l;
+	l.type = event_type::ListChanged;
+	l.reason = list_change_reason::Reload;
+	l.count = (int64_t)g_items.size();
+	emit_event(l);
+
+	return ok;
 }
 
 void init_from_disk()
@@ -1057,12 +1350,19 @@ void init_from_disk()
 
 	g_last_html_path = find_latest_lt_html();
 	if (!g_last_html_path.empty()) {
-		swap_browser_source_to_file(g_last_html_path);
+		if (target_browser_source_exists()) {
+			swap_target_browser_source_to_file(g_last_html_path);
+		} else {
+			if (!g_target_browser_source.empty()) {
+				LOGW("Saved target Browser Source '%s' not found (startup swap skipped).",
+				     g_target_browser_source.c_str());
+			}
+		}
 	}
 }
 
 // -------------------------
-// CRUD helpers
+// CRUD helpers (persist + notify list change)
 // -------------------------
 std::string add_default_lower_third()
 {
@@ -1078,7 +1378,7 @@ std::string add_default_lower_third()
 		c.id = new_id();
 
 	g_items.push_back(c);
-	set_visible(c.id, true);
+	set_visible_nosave(c.id, true);
 
 	if (!save_state_json())
 		return {};
@@ -1086,6 +1386,23 @@ std::string add_default_lower_third()
 
 	if (!rebuild_and_swap())
 		return {};
+
+	// notify list changed + visibility changed (optional but useful)
+	{
+		core_event l;
+		l.type = event_type::ListChanged;
+		l.reason = list_change_reason::Create;
+		l.id = c.id;
+		l.count = (int64_t)g_items.size();
+		emit_event(l);
+
+		core_event v;
+		v.type = event_type::VisibilityChanged;
+		v.id = c.id;
+		v.visible = true;
+		v.visible_ids = visible_ids();
+		emit_event(v);
+	}
 
 	return c.id;
 }
@@ -1114,8 +1431,10 @@ std::string clone_lower_third(const std::string &id)
 	else
 		c.title = "Lower Third (Copy)";
 
+	const std::string newId = c.id;
+
 	g_items.push_back(c);
-	set_visible(c.id, true);
+	set_visible_nosave(newId, true);
 
 	if (!save_state_json())
 		return {};
@@ -1124,7 +1443,24 @@ std::string clone_lower_third(const std::string &id)
 	if (!rebuild_and_swap())
 		return {};
 
-	return c.id;
+	{
+		core_event l;
+		l.type = event_type::ListChanged;
+		l.reason = list_change_reason::Clone;
+		l.id = sid;
+		l.id2 = newId;
+		l.count = (int64_t)g_items.size();
+		emit_event(l);
+
+		core_event v;
+		v.type = event_type::VisibilityChanged;
+		v.id = newId;
+		v.visible = true;
+		v.visible_ids = visible_ids();
+		emit_event(v);
+	}
+
+	return newId;
 }
 
 bool remove_lower_third(const std::string &id)
@@ -1139,6 +1475,8 @@ bool remove_lower_third(const std::string &id)
 	const std::string sid = sanitize_id(id);
 	const auto before = g_items.size();
 
+	const bool wasVisible = is_visible(sid);
+
 	g_items.erase(std::remove_if(g_items.begin(), g_items.end(),
 				     [&](const lower_third_cfg &c) { return c.id == sid; }),
 		      g_items.end());
@@ -1147,12 +1485,32 @@ bool remove_lower_third(const std::string &id)
 	if (!removed)
 		return false;
 
-	set_visible(sid, false);
+	set_visible_nosave(sid, false);
 
 	save_state_json();
 	save_visible_json();
 
-	return rebuild_and_swap();
+	const bool ok = rebuild_and_swap();
+
+	{
+		core_event l;
+		l.type = event_type::ListChanged;
+		l.reason = list_change_reason::Delete;
+		l.id = sid;
+		l.count = (int64_t)g_items.size();
+		emit_event(l);
+
+		if (wasVisible) {
+			core_event v;
+			v.type = event_type::VisibilityChanged;
+			v.id = sid;
+			v.visible = false;
+			v.visible_ids = visible_ids();
+			emit_event(v);
+		}
+	}
+
+	return ok;
 }
 
 } // namespace smart_lt
