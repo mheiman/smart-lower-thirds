@@ -34,6 +34,14 @@ bool obs_module_load(void)
 void obs_module_post_load(void)
 {
 	smart_lt::ws::init();
+
+	// Rebuild HTML from lt-state.json after OBS has finished startup checks
+	QTimer::singleShot(2000, []() {
+		if (smart_lt::has_output_dir()) {
+			smart_lt::rebuild_and_swap();
+		}
+	});
+
 	if (auto *dock = LowerThird_get_dock()) {
 		QTimer::singleShot(250, dock, [dock]() { dock->refreshBrowserSources(); });
 		QTimer::singleShot(1000, dock, [dock]() { dock->refreshBrowserSources(); });
