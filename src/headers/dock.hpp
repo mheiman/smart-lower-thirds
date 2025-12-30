@@ -93,7 +93,11 @@ private:
 	QComboBox *browserSourceCombo = nullptr;
 	QPushButton *refreshSourcesBtn = nullptr;
 
-	// Add
+	// Settings panel (collapsible)
+	QWidget *settingsPanel = nullptr;
+
+	// Bottom row buttons
+	QPushButton *settingsBtn = nullptr;
 	QPushButton *addBtn = nullptr;
 
 	QScrollArea *scrollArea = nullptr;

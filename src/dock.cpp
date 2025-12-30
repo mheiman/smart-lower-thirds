@@ -135,69 +135,7 @@ QScrollArea#LowerThirdContent QPushButton:hover { background: rgba(255,255,255,0
 	auto *st = style();
 
 	// -------------------------
-	// Top row: Resources (output dir)
-	// -------------------------
-	{
-		auto *row = new QHBoxLayout();
-		row->setSpacing(6);
-
-		auto *lbl = new QLabel(tr("Resources:"), this);
-
-		outputPathEdit = new QLineEdit(this);
-		outputPathEdit->setReadOnly(true);
-
-		outputBrowseBtn = new QPushButton(this);
-		outputBrowseBtn->setCursor(Qt::PointingHandCursor);
-		outputBrowseBtn->setToolTip(tr("Select output folder"));
-		outputBrowseBtn->setFlat(true);
-		outputBrowseBtn->setIcon(st->standardIcon(QStyle::SP_DirOpenIcon));
-
-		row->addWidget(lbl);
-		row->addWidget(outputPathEdit, 1);
-		row->addWidget(outputBrowseBtn);
-
-		rootLayout->addLayout(row);
-
-		connect(outputBrowseBtn, &QPushButton::clicked, this, &LowerThirdDock::onBrowseOutputFolder);
-	}
-
-	// -------------------------
-	// Browser Source selector row (combo-only workflow)
-	// -------------------------
-	{
-		auto *row = new QHBoxLayout();
-		row->setSpacing(6);
-
-		auto *lbl = new QLabel(tr("Browser Source:"), this);
-
-		browserSourceCombo = new QComboBox(this);
-		browserSourceCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-		browserSourceCombo->setToolTip(
-			tr("Select an existing OBS Browser Source that will display and control Smart Lower Thirds"));
-
-		refreshSourcesBtn = new QPushButton(this);
-		refreshSourcesBtn->setCursor(Qt::PointingHandCursor);
-		refreshSourcesBtn->setToolTip(tr("Refresh list"));
-		refreshSourcesBtn->setFlat(true);
-
-		QIcon refresh = QIcon::fromTheme(QStringLiteral("view-refresh"));
-		if (refresh.isNull())
-			refresh = st->standardIcon(QStyle::SP_BrowserReload);
-		refreshSourcesBtn->setIcon(refresh);
-
-		row->addWidget(lbl);
-		row->addWidget(browserSourceCombo, 1);
-		row->addWidget(refreshSourcesBtn);
-
-		rootLayout->addLayout(row);
-
-		connect(refreshSourcesBtn, &QPushButton::clicked, this, [this]() { populateBrowserSources(true); });
-		connect(browserSourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-			&LowerThirdDock::onBrowserSourceChanged);
-	}
-
-	// -------------------------
-	// List
+	// List (scroll area) - now at top
 	// -------------------------
 	scrollArea = new QScrollArea(this);
 	scrollArea->setObjectName(QStringLiteral("LowerThirdContent"));
@@ -213,26 +151,112 @@ QScrollArea#LowerThirdContent QPushButton:hover { background: rgba(255,255,255,0
 	rootLayout->addWidget(scrollArea, 1);
 
 	// -------------------------
-	// Add button
+	// Settings panel (collapsible, hidden by default)
 	// -------------------------
+	settingsPanel = new QWidget(this);
+	auto *settingsLayout = new QVBoxLayout(settingsPanel);
+	settingsLayout->setContentsMargins(0, 4, 0, 4);
+	settingsLayout->setSpacing(4);
+
+	// Resources row
 	{
 		auto *row = new QHBoxLayout();
 		row->setSpacing(6);
+
+		auto *lbl = new QLabel(tr("Resources:"), settingsPanel);
+
+		outputPathEdit = new QLineEdit(settingsPanel);
+		outputPathEdit->setReadOnly(true);
+
+		outputBrowseBtn = new QPushButton(settingsPanel);
+		outputBrowseBtn->setCursor(Qt::PointingHandCursor);
+		outputBrowseBtn->setToolTip(tr("Select output folder"));
+		outputBrowseBtn->setFlat(true);
+		outputBrowseBtn->setIcon(st->standardIcon(QStyle::SP_DirOpenIcon));
+		outputBrowseBtn->setIconSize(QSize(14, 14));
+
+		row->addWidget(lbl);
+		row->addWidget(outputPathEdit, 1);
+		row->addWidget(outputBrowseBtn);
+
+		settingsLayout->addLayout(row);
+
+		connect(outputBrowseBtn, &QPushButton::clicked, this, &LowerThirdDock::onBrowseOutputFolder);
+	}
+
+	// Browser Source selector row
+	{
+		auto *row = new QHBoxLayout();
+		row->setSpacing(6);
+
+		auto *lbl = new QLabel(tr("Browser Source:"), settingsPanel);
+
+		browserSourceCombo = new QComboBox(settingsPanel);
+		browserSourceCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		browserSourceCombo->setToolTip(
+			tr("Select an existing OBS Browser Source that will display and control Smart Lower Thirds"));
+
+		refreshSourcesBtn = new QPushButton(settingsPanel);
+		refreshSourcesBtn->setCursor(Qt::PointingHandCursor);
+		refreshSourcesBtn->setToolTip(tr("Refresh list"));
+		refreshSourcesBtn->setFlat(true);
+
+		QIcon refresh = QIcon::fromTheme(QStringLiteral("view-refresh"));
+		if (refresh.isNull())
+			refresh = st->standardIcon(QStyle::SP_BrowserReload);
+		refreshSourcesBtn->setIcon(refresh);
+		refreshSourcesBtn->setIconSize(QSize(14, 14));
+
+		row->addWidget(lbl);
+		row->addWidget(browserSourceCombo, 1);
+		row->addWidget(refreshSourcesBtn);
+
+		settingsLayout->addLayout(row);
+
+		connect(refreshSourcesBtn, &QPushButton::clicked, this, [this]() { populateBrowserSources(true); });
+		connect(browserSourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+			&LowerThirdDock::onBrowserSourceChanged);
+	}
+
+	settingsPanel->setVisible(false);
+	rootLayout->addWidget(settingsPanel);
+
+	// -------------------------
+	// Bottom row: Settings + Add buttons
+	// -------------------------
+	{
+		auto *row = new QHBoxLayout();
+		row->setSpacing(3);
+		row->setContentsMargins(0, 0, 0, 0);
 		row->addStretch(1);
+
+		settingsBtn = new QPushButton(this);
+		settingsBtn->setCursor(Qt::PointingHandCursor);
+		settingsBtn->setToolTip(tr("Toggle settings panel"));
+		settingsBtn->setFlat(true);
+		settingsBtn->setIcon(QIcon::fromTheme(QStringLiteral("configure"),
+			st->standardIcon(QStyle::SP_FileDialogInfoView)));
+		settingsBtn->setIconSize(QSize(14, 14));
+		settingsBtn->setFixedSize(20, 20);
 
 		addBtn = new QPushButton(this);
 		addBtn->setCursor(Qt::PointingHandCursor);
 		addBtn->setToolTip(tr("Add new lower third"));
 		addBtn->setFlat(true);
-
 		QIcon plus = QIcon::fromTheme(QStringLiteral("list-add"));
 		if (plus.isNull())
 			plus = st->standardIcon(QStyle::SP_DialogYesButton);
 		addBtn->setIcon(plus);
+		addBtn->setIconSize(QSize(14, 14));
+		addBtn->setFixedSize(20, 20);
 
+		row->addWidget(settingsBtn);
 		row->addWidget(addBtn);
 		rootLayout->addLayout(row);
 
+		connect(settingsBtn, &QPushButton::clicked, this, [this]() {
+			settingsPanel->setVisible(!settingsPanel->isVisible());
+		});
 		connect(addBtn, &QPushButton::clicked, this, &LowerThirdDock::onAddLowerThird);
 	}
 
