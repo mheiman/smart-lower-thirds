@@ -50,8 +50,8 @@ QFrame#sltRowFrame[sltActive="true"] {
   background: rgba(88,166,255,0.16);
   border: 1px solid rgba(88,166,255,0.9);
 }
-QLabel#sltRowLabel { color: #f0f6fc; font-weight: 500; font-size: 12px; }
-QLabel#sltRowSubLabel { color: rgba(240,246,252,0.72); font-size: 10px; }
+QLabel#sltRowLabel { color: #f0f6fc; font-weight: 500; font-size: 12px; padding: 0; margin: 0; }
+QLabel#sltRowSubLabel { color: rgba(240,246,252,0.72); font-size: 10px; padding: 0; margin: 0; }
 QLabel#sltRowThumbnail { border-radius: 9px; background: rgba(0,0,0,0.35); }
 QScrollArea#LowerThirdContent QPushButton { border: none; background: transparent; padding: 2px; }
 QScrollArea#LowerThirdContent QPushButton:hover { background: rgba(255,255,255,0.06); border-radius: 3px; }
@@ -359,7 +359,7 @@ void LowerThirdDock::rebuildList()
 		rowFrame->setCursor(Qt::PointingHandCursor);
 
 		auto *h = new QHBoxLayout(rowFrame);
-		h->setContentsMargins(4, 1, 4, 1);
+		h->setContentsMargins(4, 0, 4, 0);
 		h->setSpacing(3);
 
 		auto *visible = new QCheckBox(rowFrame);
