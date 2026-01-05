@@ -394,18 +394,37 @@ void LowerThirdDock::repeatTick()
 		const QString qid = QString::fromStdString(c.id);
 
 		const int every = c.repeat_every_sec;
+		int visibleSec = c.repeat_visible_sec;
+
+		// Mode matrix:
+		//  - every==0 && visible==0   => full manual (no scheduling)
+		//  - every==0 && visible>0    => manual show + auto-hide after visibleSec
+		//  - every>0                 => full automated (auto-show + auto-hide). If visible==0, use default.
 		if (every <= 0) {
 			nextOnMs_.remove(qid);
-			offAtMs_.remove(qid);
-			continue;
+
+			if (visibleSec <= 0) {
+				offAtMs_.remove(qid);
+				continue;
+			}
+
+			// If it is currently visible but we have no offAt scheduled (e.g. toggled via WS),
+			// schedule an auto-hide.
+			if (smart_lt::is_visible(c.id)) {
+				if (!offAtMs_.contains(qid))
+					offAtMs_[qid] = now + (qint64)visibleSec * 1000;
+			} else {
+				offAtMs_.remove(qid);
+			}
+
+			// Manual mode: no auto-show.
+		} else {
+			if (visibleSec <= 0)
+				visibleSec = 3;
+
+			if (!nextOnMs_.contains(qid))
+				nextOnMs_[qid] = now + (qint64)every * 1000;
 		}
-
-		int visibleSec = c.repeat_visible_sec;
-		if (visibleSec <= 0)
-			visibleSec = 3;
-
-		if (!nextOnMs_.contains(qid))
-			nextOnMs_[qid] = now + (qint64)every * 1000;
 
 		// Auto-hide
 		if (offAtMs_.contains(qid) && now >= offAtMs_[qid]) {
@@ -418,7 +437,7 @@ void LowerThirdDock::repeatTick()
 		}
 
 		// Auto-show
-		if (now >= nextOnMs_[qid]) {
+		if (every > 0 && nextOnMs_.contains(qid) && now >= nextOnMs_[qid]) {
 			qint64 next = nextOnMs_[qid];
 			const qint64 step = (qint64)every * 1000;
 			while (next <= now)
@@ -695,16 +714,26 @@ void LowerThirdDock::handleToggleVisible(const QString &id)
 	// Preserve your repeat scheduling behavior
 	if (!wasVisible && nowVisible) {
 		if (auto *cfg = smart_lt::get_by_id(sid)) {
-			if (cfg->repeat_every_sec > 0) {
-				int visibleSec = cfg->repeat_visible_sec;
-				if (visibleSec <= 0)
+			const int every = cfg->repeat_every_sec;
+			int visibleSec = cfg->repeat_visible_sec;
+
+			// Same mode matrix as repeatTick()
+			//  - every==0 && visible==0   => full manual (no scheduling)
+			//  - every==0 && visible>0    => manual show + auto-hide after visibleSec
+			//  - every>0                 => full automated. If visible==0, use default.
+			if (every > 0 || visibleSec > 0) {
+				if (every > 0 && visibleSec <= 0)
 					visibleSec = 3;
 
-				const qint64 now = QDateTime::currentMSecsSinceEpoch();
-				offAtMs_[id] = now + (qint64)visibleSec * 1000;
+				if (visibleSec > 0) {
+					const qint64 now = QDateTime::currentMSecsSinceEpoch();
+					offAtMs_[id] = now + (qint64)visibleSec * 1000;
+				}
 
-				if (!nextOnMs_.contains(id))
-					nextOnMs_[id] = now + (qint64)cfg->repeat_every_sec * 1000;
+				if (every > 0 && !nextOnMs_.contains(id)) {
+					const qint64 now = QDateTime::currentMSecsSinceEpoch();
+					nextOnMs_[id] = now + (qint64)every * 1000;
+				}
 			}
 		}
 	}
@@ -771,9 +800,36 @@ void LowerThirdDock::updateRowCountdownFor(const LowerThirdRowUi &rowUi)
 	}
 
 	const int every = cfg->repeat_every_sec;
+	const int keepVisible = cfg->repeat_visible_sec;
+
+	// Mode matrix:
+	//  - every==0 && keepVisible==0 => full manual (no countdowns)
+	//  - every==0 && keepVisible>0  => manual show + auto-hide countdown
+	//  - every>0                   => full automated (next + hide countdowns)
 	if (every <= 0) {
-		rowUi.subLbl->clear();
-		rowUi.subLbl->setVisible(false);
+		if (keepVisible <= 0) {
+			rowUi.subLbl->clear();
+			rowUi.subLbl->setVisible(false);
+			return;
+		}
+
+		const bool isVis = smart_lt::is_visible(cfg->id);
+		if (!isVis) {
+			rowUi.subLbl->clear();
+			rowUi.subLbl->setVisible(false);
+			return;
+		}
+
+		rowUi.subLbl->setVisible(true);
+
+		const qint64 now = QDateTime::currentMSecsSinceEpoch();
+		const QString qid = rowUi.id;
+
+		if (!offAtMs_.contains(qid))
+			offAtMs_[qid] = now + (qint64)keepVisible * 1000;
+
+		const qint64 leftHide = offAtMs_[qid] - now;
+		rowUi.subLbl->setText(QStringLiteral("Hides in ") + formatCountdownMs(leftHide));
 		return;
 	}
 
