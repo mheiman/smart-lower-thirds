@@ -61,7 +61,7 @@ struct lower_third_cfg {
 	std::string hotkey;
 
 	int repeat_every_sec   = 0; // 0 = disabled
-	int repeat_visible_sec = 3; // how long to keep visible when auto-shown
+	int repeat_visible_sec = 0; // how long to keep visible when auto-shown
 };
 
 // -------------------------
