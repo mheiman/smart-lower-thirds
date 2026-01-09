@@ -158,8 +158,10 @@ inline const std::vector<CbxOption> AnimOutOptions = {
 };
 
 inline const std::vector<CbxOption> LtPositionOptions = {
-	{"Bottom Left", "lt-pos-bottom-left"}, {"Bottom Right", "lt-pos-bottom-right"}, {"Top Left", "lt-pos-top-left"},
-	{"Top Right", "lt-pos-top-right"},     {"Screen Center", "lt-pos-center"},
+	{"Bottom Left", "lt-pos-bottom-left"},   {"Bottom Center", "lt-pos-bottom-center"},
+	{"Bottom Right", "lt-pos-bottom-right"}, {"Top Left", "lt-pos-top-left"},
+	{"Top Center", "lt-pos-top-center"},     {"Top Right", "lt-pos-top-right"},
+	{"Screen Center", "lt-pos-center"},
 };
 
 class LowerThirdSettingsDialog : public QDialog {
@@ -173,6 +175,7 @@ public:
 private slots:
 	void onSaveAndApply();
 	void onBrowseProfilePicture();
+	void onDeleteProfilePicture();
 	void onPickBgColor();
 	void onPickTextColor();
 
@@ -199,10 +202,12 @@ private:
 	QString pendingProfilePicturePath;
 
 	QLineEdit *titleEdit = nullptr;
+	QLineEdit *labelEdit = nullptr;
 	QLineEdit *subtitleEdit = nullptr;
 
 	QLineEdit *profilePictureEdit = nullptr;
 	QPushButton *browseProfilePictureBtn = nullptr;
+	QPushButton *deleteProfilePictureBtn = nullptr;
 
 	QComboBox *animInCombo = nullptr;
 	QComboBox *animOutCombo = nullptr;

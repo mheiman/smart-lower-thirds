@@ -36,6 +36,10 @@ namespace smart_lt {
 
 struct lower_third_cfg {
 	std::string id;
+	// Display-only label for the dock list (does not affect overlay content)
+	std::string label;
+	// Sort key for arranging items in the dock (lower first)
+	int order = 0;
 
 	std::string title;
 	std::string subtitle;
@@ -61,7 +65,7 @@ struct lower_third_cfg {
 	std::string hotkey;
 
 	int repeat_every_sec   = 0; // 0 = disabled
-	int repeat_visible_sec = 3; // how long to keep visible when auto-shown
+	int repeat_visible_sec = 0; // how long to keep visible when auto-shown
 };
 
 // -------------------------
@@ -152,7 +156,6 @@ bool save_visible_json();
 // -------------------------
 bool ensure_output_artifacts_exist();
 bool regenerate_merged_css_js();
-std::string generate_timestamp_html();
 bool rebuild_and_swap();
 
 // Force reload state+visible from disk and rebuild/swap (with notifications)
@@ -166,6 +169,15 @@ std::string target_browser_source_name();
 bool set_target_browser_source_name(const std::string &name);
 bool target_browser_source_exists();
 bool swap_target_browser_source_to_file(const std::string &absoluteHtmlPath);
+
+// Browser source dimensions (persisted in module config)
+int target_browser_width();
+int target_browser_height();
+bool set_target_browser_dimensions(int width, int height);
+
+// Dock behavior (persisted in module config)
+bool dock_exclusive_mode();
+bool set_dock_exclusive_mode(bool enabled);
 
 // -------------------------
 // Paths
@@ -188,5 +200,8 @@ std::string new_id();
 std::string add_default_lower_third();
 std::string clone_lower_third(const std::string &id);
 bool remove_lower_third(const std::string &id);
+
+// Reorder helpers (persist + notify). delta: -1 (up), +1 (down)
+bool move_lower_third(const std::string &id, int delta);
 
 } // namespace smart_lt
